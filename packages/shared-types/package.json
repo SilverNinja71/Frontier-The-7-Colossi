@@ -1,0 +1,14 @@
+{
+  "name": "@frontier/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical data contracts shared by client, server, wiki and tooling",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

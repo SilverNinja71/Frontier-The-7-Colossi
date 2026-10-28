@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    // Bundled by Vite, so constructor parameter properties are fine here. Shared packages keep
+    // erasable-only syntax so the server can run them via Bun/Node type stripping.
+    "erasableSyntaxOnly": false
+  },
+  "include": ["src", "vite.config.ts"]
+}
