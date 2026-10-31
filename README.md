@@ -28,17 +28,20 @@ frontier-mmo/
 ├── apps/
 │   └── client/                 Vite + React 19 + three.js + Rapier3D + Zustand + Tailwind 4
 │       └── src/
-│           ├── engine/         Game loop, SceneManager, CameraRig, InputController, TouchControls,
-│           │                   PhysicsWorld, ArenaTerrain, PlayerCharacter, PlayerRig
-│           ├── combat/         CombatSystem, TrainingDummy, BladeTrail, HitSparks, DamageNumbers
+│           ├── engine/         Game loop, SceneManager (day/night), CameraRig (lock-on), InputController,
+│           │                   TouchControls, PhysicsWorld, ArenaTerrain, PlayerCharacter, PlayerRig
+│           ├── combat/         CombatSystem, TrainingDummy, ShadowStalker, BladeTrail, HitSparks,
+│           │                   DamageNumbers
+│           ├── audio/          Procedural WebAudio SFX (no audio files)
 │           ├── platform/       PlatformService interface, CrazyGamesService, WebPlatformService
 │           ├── ui/             HUD (React) + Zustand store
 │           └── data/           Sandbox content typed against shared contracts
 └── packages/
     ├── shared-types/           Canonical data shapes: stats, items, skills, marks, monsters,
     │                           colossi, world, network state/packets, monetization policy
-    └── combat-math/            Deterministic rules: motor, frame data, hit registration,
-                                damage, stats/marks, skill evolution, seeded RNG
+    └── combat-math/            Deterministic shared simulation: motor (incl. parry/lock-on), frame
+                                data, hit registration, damage, stats/marks, skill evolution,
+                                world clock, Shadow Stalker brain, seeded RNG
 ```
 
 `apps/server`, `apps/wiki-forum` and `apps/asset-pipeline` are Phase 2+; the `apps/*` workspace
@@ -52,7 +55,7 @@ directly under Bun or Node type stripping.
 
 **One simulation, two runtimes.** `SIM_TICK_HZ = 30` is shared. The client turns input into an
 `InputFrame` (intent only, never positions) and steps `stepMotor()`, a pure, allocation-free
-state machine (`free → dodge / attack → stagger / dead`) that outputs desired velocity. Rapier's
+state machine (`free → dodge / attack / parry → stagger / dead`) that outputs desired velocity. Rapier's
 kinematic character controller resolves collisions. The authoritative server will step the
 *same* motor on the *same* frames, which is what makes reconciliation by input replay possible.
 Rendering interpolates between the last two ticks at display rate.
@@ -61,6 +64,16 @@ Rendering interpolates between the last two ticks at display rate.
 exactly what the client animates. The dual-blade chain is Twin Cut → Return Cut → Crosswind
 Finisher (360° spin). It has input buffering (6 ticks), dodge-cancel out of attack recovery,
 and stamina costs. The dodge travels a fixed 4.2 m along an eased curve with i-frames on ticks 1–8.
+A parry deflects on ticks 0–5 (200 ms) and guards late on ticks 6–10. Perfect parries refund
+stamina and free you instantly, so you can deflect every blow of a combo. `resolveIncomingAttack`
+decides dodged / parried / guarded / hit identically on client and server.
+
+**World time is simulated, not wall-clock.** `world-clock.ts` derives time of day and a per-night
+moon phase from a tick-advanced clock, so every shard agrees when the new moon rises.
+
+**Colossus AI is shared code.** `shadow-stalker.ts` is a pure, seeded state machine (prowl,
+telegraphed attacks, recoil, exposed, subdued, dawn dissolve) that outputs velocity and live
+hitboxes like the player motor. The client renders it today; the server will run the same brain.
 
 **Hit registration** sweeps a horizontal sector (reach × arc × height band) against sphere
 hurtboxes. Weak points can be *directional*: the dummy's core only registers from behind
@@ -85,7 +98,10 @@ declares `stats?: never`.
 | WASD + mouse     | left thumb / right drag | Move / camera (click to pointer-lock; right-drag fallback) |
 | LMB or J         | Strike           | 3-hit combo (mash or buffer)                  |
 | Space            | Dodge            | Roll with i-frames; no direction = backstep   |
+| RMB or L         | Parry            | Deflect at the moment of impact               |
+| Tab or MMB       | Lock             | Lock on: camera tracks, you strafe and swing at the target |
 | Shift            | Sprint (toggle)  | Drains stamina; empty → *winded*              |
+| N                | pause menu       | Call the new moon (skip to the Shadow Stalker) |
 | T                | pause menu       | Slam drill: telegraphed AoE every 5 s         |
 | G                | pause menu       | Dummy tracking on/off                         |
 | Esc / P          | II               | Pause (CrazyGames `gameplayStop`, banner slot) |
@@ -95,6 +111,25 @@ Things to try:
 - With tracking on, the dummy turns to face you at 55°/s. Dodge-roll around it to strike the
   glowing core on its back. Those crits count toward *Spiral Slash*.
 - Turn on the slam drill and roll *through* the red ring as it lands for a **Perfect Dodge**.
+
+## The Shadow Stalker (Unique Colossus #1)
+
+A full day lasts 8 minutes; the sandbox starts in late afternoon, about a minute before a
+new-moon night (or press **N**). At nightfall the Stalker rises across the arena and a world
+announcement fires.
+
+- **Blades cannot wound it.** Every strike shows *IMMUNE* until it is Exposed.
+- **Parry to break it.** A gold glint and white eyes mean *parry this*. Each perfect parry
+  drains its Resolve, and three in a row (watch the ◆◆◆ chain) collapse it Exposed for 3.5 s.
+  Strike the glowing heart under its chest then.
+- **Red 危 means get out.** Moonless Howl (ring around it) and Shade Pounce (ring under you) can't
+  be parried: dodge through with i-frames or outrun the ring.
+- Its moves: *Rending Claws* (3-hit combo, the best parry-chain opening), *Shadow Lunge*
+  (gap-closer, parry knocks it back), *Moonless Howl*, *Shade Pounce*.
+- **Win or survive until dawn** to earn the permanent **Mark of the Night Lycaon**: violet brands
+  on your character, chest armor forbidden, +20% agility and +20% crit at night. It is saved in
+  this browser for the sandbox (server-side in Phase 2). The win also calls CrazyGames
+  `happytime()`.
 
 ## CrazyGames SDK wrapper
 
@@ -129,22 +164,28 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Verification
 
-- `npm run check`: typecheck, 26 unit tests (motor, dodge distance/i-frames, combo/cancel,
-  stamina exhaustion, hit registration incl. directional weak points, damage, marks, skill
-  evolution, SDK wrapper lifecycle/policy/errors/throttling/timeouts), and the production build.
+- `npm run check`: typecheck, 42 unit tests (motor, dodge distance/i-frames, combo/cancel,
+  parry windows/frontal arc/guard break, lock-on strafing, stamina exhaustion, hit registration
+  incl. directional weak points, damage, marks, skill evolution, world clock and moon phases,
+  simulated Shadow Stalker fights (a perfect-parry bot subdues it, a passive one never exposes
+  it, dawn dissolves it, seeds are deterministic), SDK wrapper lifecycle/policy/errors/
+  throttling/timeouts), and the production build.
 - The production build was driven in headless Chromium: combo hits and the DPS meter, a
   precision core crit from behind, the slam drill (150 damage + stagger) and a perfect dodge
   (no damage), touch controls under mobile emulation, and the full CrazyGames call sequence
   against an intercepted SDK (`init → loadingStart/Stop → gameplayStart → gameplayStop →
-  requestBanner → rewarded ad → gameplayStart`). No console errors.
+  requestBanner → rewarded ad → gameplayStart`). The night encounter was driven too: emergence
+  announcement, boss frame, lock-on, IMMUNE strikes, landed parries, the 危 peril warning and
+  ring, its full attack cycle (pounce, howl, lunge, claw combo), respawn grace, and the mark
+  panel/tattoo after a reload. No console errors.
 
 ## Phase 2 candidates
 
 - `apps/server`: Colyseus `WorldZoneRoom` stepping `stepMotor` per `InputFrame`, schema classes
   implementing `PlayerNetState`/`WorldZoneNetState`, input-replay reconciliation on the client.
-- Parry timing windows (`InputButton.Parry` is reserved) and the first colossus prototype.
+- Server-authoritative colossus: run `stepStalker` in a `ColossusRaidRoom`, one instance per world.
 - `apps/asset-pipeline`: glTF → Draco + KTX2 batch CLI; swap `PlayerRig` meshes for the model.
-- Positional audio (hook into `onAdBreak` / `onMuteChange`), gamepad input, WebGPU renderer path.
+- Gamepad input, WebGPU renderer path, recorded/foley audio to replace the synthesised SFX.
 - Swap `@dimforge/rapier3d-compat` (base64 WASM, 1.7 MB gzip) for the streaming `.wasm` build.
 - Lint/format (Biome or ESLint + Prettier) and CI running `npm run check`.
 

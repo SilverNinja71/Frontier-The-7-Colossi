@@ -21,6 +21,7 @@ export class CameraRig {
   #trauma = 0;
   #time = 0;
   #fov = 62;
+  #locked = false;
   readonly #pivot = new THREE.Vector3();
   readonly #dir = new THREE.Vector3();
   readonly #right = new THREE.Vector3();
@@ -28,7 +29,7 @@ export class CameraRig {
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
     private readonly physics: PhysicsWorld,
-    private readonly exclude: RAPIER.Collider,
+    private readonly exclude: readonly RAPIER.Collider[],
   ) {}
 
   /** Place the camera directly behind a character facing `yaw`. */
@@ -38,6 +39,7 @@ export class CameraRig {
   }
 
   applyLook(dx: number, dy: number): void {
+    if (this.#locked) return; // lock-on owns the camera
     this.yaw -= dx * this.sensitivity;
     this.pitch = THREE.MathUtils.clamp(this.pitch + dy * this.sensitivity, MIN_PITCH, MAX_PITCH);
   }
@@ -47,8 +49,18 @@ export class CameraRig {
     this.#trauma = Math.min(1, this.#trauma + amount);
   }
 
-  update(focus: THREE.Vector3, frameDt: number, sprinting: boolean): void {
+  /** `lockTarget`: world point to keep framed (lock-on), or null for free look. */
+  update(focus: THREE.Vector3, frameDt: number, sprinting: boolean, lockTarget: THREE.Vector3 | null = null): void {
     this.#time += frameDt;
+    this.#locked = lockTarget !== null;
+    if (lockTarget) {
+      const desiredYaw = Math.atan2(-(lockTarget.x - focus.x), -(lockTarget.z - focus.z));
+      let delta = (desiredYaw - this.yaw) % (Math.PI * 2);
+      if (delta > Math.PI) delta -= Math.PI * 2;
+      else if (delta < -Math.PI) delta += Math.PI * 2;
+      this.yaw += delta * (1 - Math.exp(-9 * frameDt));
+      this.pitch = THREE.MathUtils.damp(this.pitch, 0.24, 4, frameDt);
+    }
     const cosPitch = Math.cos(this.pitch);
     this.#dir.set(Math.sin(this.yaw) * cosPitch, Math.sin(this.pitch), Math.cos(this.yaw) * cosPitch);
     this.#right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));

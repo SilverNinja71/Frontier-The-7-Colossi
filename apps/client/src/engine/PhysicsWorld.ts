@@ -37,17 +37,18 @@ export class PhysicsWorld {
   }
 
   /**
-   * Distance along `dir` (unit) from `origin` to the first static hit, or `maxDistance`.
-   * Excludes the given collider (the local player).
+   * Distance along `dir` (unit) from `origin` to the first hit, or `maxDistance`.
+   * Ignores the given colliders (the local player, moving actors).
    */
   castRay(
     origin: { x: number; y: number; z: number },
     dir: { x: number; y: number; z: number },
     maxDistance: number,
-    exclude?: RAPIER.Collider,
+    exclude: readonly RAPIER.Collider[] = [],
   ): number {
     const ray = new this.rapier.Ray(origin, dir);
-    const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, exclude);
+    const filter = exclude.length ? (c: RAPIER.Collider) => !exclude.includes(c) : undefined;
+    const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, undefined, undefined, filter);
     return hit ? hit.timeOfImpact : maxDistance;
   }
 }

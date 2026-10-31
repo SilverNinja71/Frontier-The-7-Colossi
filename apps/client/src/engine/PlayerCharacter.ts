@@ -23,6 +23,8 @@ const GRAVITY = 28;
 const RESPAWN_TICKS = 75;
 const HP_REGEN_DELAY_TICKS = 150;
 const HP_REGEN_PER_TICK = 0.004;
+/** After respawning, enemies hold off for this long. */
+const SPAWN_GRACE_TICKS = 60;
 
 /**
  * Local player: shared motor (prediction-ready) + Rapier kinematic character controller.
@@ -40,12 +42,13 @@ export class PlayerCharacter {
   #verticalVelocity = 0;
   #grounded = false;
   #ticksSinceDamage = Infinity;
+  #ticksSinceSpawn = Infinity;
   #lastStep: MotorStepResult = { velX: 0, velZ: 0, events: 0 };
 
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly spawn: Vec3,
-    readonly stats: CombatStats,
+    public stats: CombatStats,
     maxHp: number,
     maxStamina: number,
     private readonly motorContext: MotorContext,
@@ -83,10 +86,15 @@ export class PlayerCharacter {
     return this.motor.action === CharacterAction.Dead;
   }
 
+  get spawnProtected(): boolean {
+    return this.#ticksSinceSpawn < SPAWN_GRACE_TICKS;
+  }
+
   /** Simulate one tick. Call PhysicsWorld.step() and then syncFromPhysics() afterwards. */
   step(input: InputFrame): MotorStepResult {
     const dt = this.motorContext.dt;
     Object.assign(this.#prev, this.#curr);
+    this.#ticksSinceSpawn++;
 
     if (this.dead) {
       if (this.motor.actionTick++ >= RESPAWN_TICKS) this.#respawn();
@@ -133,6 +141,14 @@ export class PlayerCharacter {
     return true;
   }
 
+  /** Chip damage that bypasses stagger and i-frames (blocked blows). */
+  applyDamage(amount: number): void {
+    if (this.dead) return;
+    this.hp = Math.max(0, this.hp - amount);
+    this.#ticksSinceDamage = 0;
+    if (this.hp === 0) applyDeath(this.motor);
+  }
+
   pose(): GroundPose {
     return this.#curr;
   }
@@ -153,6 +169,7 @@ export class PlayerCharacter {
   }
 
   #respawn(): void {
+    this.#ticksSinceSpawn = 0;
     this.body.setTranslation({ x: this.spawn.x, y: this.spawn.y + FEET_OFFSET, z: this.spawn.z }, true);
     this.#verticalVelocity = 0;
     this.hp = this.maxHp;

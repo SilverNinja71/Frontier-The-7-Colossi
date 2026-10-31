@@ -29,7 +29,7 @@ export class TouchControls {
   constructor(
     parent: HTMLElement,
     private readonly input: InputController,
-    onPause: () => void,
+    actions: { onPause: () => void; onLock: () => void },
   ) {
     const signal = this.#abort.signal;
     this.root = el('div', 'pointer-events-auto fixed inset-0 z-10 select-none touch-none');
@@ -47,18 +47,26 @@ export class TouchControls {
     this.root.addEventListener('pointercancel', this.#onUp, { signal });
 
     const cluster = el('div', 'absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-5 flex items-end gap-3');
-    cluster.append(
+    const column = el('div', 'flex flex-col items-center gap-3');
+    column.append(
+      this.#button('Parry', 'h-16 w-16 bg-amber-400/40', InputButton.Parry, signal),
       this.#button('Dodge', 'h-16 w-16 bg-sky-500/40', InputButton.Dodge, signal),
-      this.#button('Strike', 'h-24 w-24 bg-rose-500/45 text-base', InputButton.Attack, signal),
     );
-    const sprint = this.#toggle('Sprint', 'absolute bottom-36 right-8 h-14 w-14 bg-amber-400/35', signal);
+    cluster.append(column, this.#button('Strike', 'h-24 w-24 bg-rose-500/45 text-base', InputButton.Attack, signal));
+    const sprint = this.#toggle('Sprint', 'absolute bottom-48 right-28 h-14 w-14 bg-emerald-500/35', signal);
+    const lock = el('button', 'absolute bottom-48 right-6 h-14 w-14 rounded-full border border-white/40 bg-violet-500/35 text-xs font-bold uppercase text-white');
+    lock.textContent = 'Lock';
+    lock.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      actions.onLock();
+    }, { signal });
     const pause = el('button', 'absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-black/40 px-3 py-1 text-sm text-white');
     pause.textContent = 'II';
     pause.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      onPause();
+      actions.onPause();
     }, { signal });
-    this.root.append(cluster, sprint, pause);
+    this.root.append(cluster, sprint, lock, pause);
     parent.appendChild(this.root);
   }
 

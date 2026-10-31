@@ -6,6 +6,7 @@ const KEY_BUTTONS: Record<string, number> = {
   Space: InputButton.Dodge,
   KeyJ: InputButton.Attack,
   KeyK: InputButton.Dodge,
+  KeyL: InputButton.Parry,
   KeyE: InputButton.Interact,
 };
 
@@ -104,7 +105,8 @@ export class InputController {
     return look;
   }
 
-  sampleFrame(viewYaw: number): InputFrame {
+  /** `extraHeld` adds game-side state flags such as InputButton.LockOn. */
+  sampleFrame(viewYaw: number, extraHeld = 0): InputFrame {
     const seq = ++this.#seq;
     if (!this.#enabled) return { seq, moveX: 0, moveY: 0, viewYaw, held: 0, pressed: 0 };
 
@@ -116,7 +118,7 @@ export class InputController {
       moveY /= length;
     }
 
-    let held = this.#mouseHeld | this.#virtualHeld;
+    let held = this.#mouseHeld | this.#virtualHeld | extraHeld;
     for (const code of this.#keys) held |= KEY_BUTTONS[code] ?? 0;
     const pressed = this.#pressedLatch;
     this.#pressedLatch = 0;
@@ -148,6 +150,11 @@ export class InputController {
   };
 
   #onMouseDown = (event: MouseEvent): void => {
+    if (event.button === 1) {
+      event.preventDefault(); // middle click: no autoscroll
+      this.#hotkeys.get('Mouse1')?.();
+      return;
+    }
     if (!this.#enabled) return;
     const button = MOUSE_BUTTONS[event.button] ?? 0;
     this.#pressedLatch |= button;

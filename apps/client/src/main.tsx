@@ -26,12 +26,15 @@ async function boot(): Promise<void> {
   setLabel('Contacting platform…');
   await platform.init();
   platform.loadingStart();
-  platform.onMuteChange((muted) => useHud.setState({ muted }));
 
   try {
     const { Game } = await engine;
     const game = await Game.create(mustGet('game-root'), mustGet('overlay-root'), platform, setLabel);
     platform.onAdBreak((active) => game.setAdBreak(active));
+    platform.onMuteChange((muted) => {
+      useHud.setState({ muted });
+      game.setMuted(muted);
+    });
     useHud.setState({ phase: 'title' });
     if (import.meta.env.DEV) Object.assign(window, { __game: game });
   } catch (error) {

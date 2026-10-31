@@ -6,7 +6,7 @@ import type { MoonPhase, TimeOfDay } from '@frontier/shared-types';
  */
 
 /** Real seconds per in-game day for the sandbox. Live shards will run a longer cycle. */
-export const SANDBOX_DAY_SECONDS = 240;
+export const SANDBOX_DAY_SECONDS = 480;
 
 /** Fractions of the day where each period begins. Night wraps through midnight. */
 export const DAY_PERIODS = { dawn: 0.22, day: 0.3, dusk: 0.72, night: 0.8 } as const;

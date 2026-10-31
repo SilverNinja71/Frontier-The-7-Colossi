@@ -20,17 +20,50 @@ export function terrainHeight(x: number, z: number): number {
   return Math.max(hills, -1.5) + bowl + mountains;
 }
 
-/** The training-grounds arena: sand floor, ring wall with four gates, pillars, scattered props. */
+const BRAZIER_LIGHT = 26;
+
+/** The training-grounds arena: sand floor, ring wall with four gates, pillars, braziers, props. */
 export class ArenaTerrain {
   readonly group = new THREE.Group();
+  readonly #markingMaterial = new THREE.MeshBasicMaterial({
+    color: '#f3d58a',
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+  readonly #flames: { mesh: THREE.Mesh; light: THREE.PointLight; phase: number }[] = [];
+  readonly #flameMaterial = new THREE.MeshBasicMaterial({
+    color: '#ffb347',
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
 
   constructor(scene: THREE.Scene, physics: PhysicsWorld) {
     this.#buildGround(physics);
     this.#buildMarkings();
     this.#buildWall(physics);
     this.#buildPillars(physics);
+    this.#buildBraziers(physics);
     this.#buildScatter(physics);
     scene.add(this.group);
+  }
+
+  /**
+   * Night factor 0..1: braziers kindle at dusk. Light count stays constant (intensity only)
+   * so the cycle never triggers shader recompiles.
+   */
+  setNight(night: number, time: number): void {
+    this.#markingMaterial.opacity = 0.32 - 0.14 * night;
+    this.#flameMaterial.opacity = night;
+    for (const flame of this.#flames) {
+      const flicker = 0.85 + Math.sin(time * 11 + flame.phase) * 0.08 + Math.sin(time * 23 + flame.phase * 2) * 0.07;
+      flame.light.intensity = BRAZIER_LIGHT * night * flicker;
+      flame.mesh.visible = night > 0.02;
+      flame.mesh.scale.set(1, 0.6 + 0.4 * night * flicker, 1);
+    }
   }
 
   #buildGround(physics: PhysicsWorld): void {
@@ -69,14 +102,7 @@ export class ArenaTerrain {
   }
 
   #buildMarkings(): void {
-    const material = new THREE.MeshBasicMaterial({
-      color: '#f3d58a',
-      transparent: true,
-      opacity: 0.32,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-    });
+    const material = this.#markingMaterial;
     for (const [inner, outer] of [
       [7.6, 8.0],
       [ARENA_RADIUS - 1.4, ARENA_RADIUS - 0.9],
@@ -152,6 +178,41 @@ export class ArenaTerrain {
         this.group.add(post, banner);
         physics.addStatic(physics.rapier.ColliderDesc.cylinder(2.3, 0.28).setTranslation(x, 2.3, z));
       }
+    }
+  }
+
+  #buildBraziers(physics: PhysicsWorld): void {
+    const iron = new THREE.MeshStandardMaterial({ color: '#3b3632', flatShading: true, roughness: 0.6, metalness: 0.5 });
+    const coal = new THREE.MeshStandardMaterial({ color: '#2a1608', emissive: '#ff5a1a', emissiveIntensity: 0.6, flatShading: true });
+    for (let i = 0; i < 4; i++) {
+      const angle = Math.PI / 4 + (i * Math.PI) / 2; // between the gates
+      const x = Math.sin(angle) * (ARENA_RADIUS - 3.5);
+      const z = Math.cos(angle) * (ARENA_RADIUS - 3.5);
+      const brazier = new THREE.Group();
+      brazier.position.set(x, 0, z);
+      for (let leg = 0; leg < 3; leg++) {
+        const a = (leg / 3) * Math.PI * 2;
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.3, 5), iron);
+        m.position.set(Math.sin(a) * 0.32, 0.6, Math.cos(a) * 0.32);
+        m.rotation.set(Math.cos(a) * 0.25, 0, -Math.sin(a) * 0.25);
+        brazier.add(m);
+      }
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.32, 0.38, 8, 1, true), iron);
+      bowl.position.y = 1.32;
+      bowl.material.side = THREE.DoubleSide;
+      const coals = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.08, 8), coal);
+      coals.position.y = 1.42;
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.25, 7, 1, true).translate(0, 0.62, 0), this.#flameMaterial);
+      flame.position.y = 1.42;
+      const light = new THREE.PointLight('#ff9a4a', 0, 22, 1.6);
+      light.position.y = 2.3;
+      brazier.add(bowl, coals, flame, light);
+      brazier.traverse((o) => {
+        if (o instanceof THREE.Mesh && o !== flame) o.castShadow = true;
+      });
+      this.group.add(brazier);
+      this.#flames.push({ mesh: flame, light, phase: i * 1.7 });
+      physics.addStatic(physics.rapier.ColliderDesc.cylinder(0.75, 0.6).setTranslation(x, 0.75, z));
     }
   }
 

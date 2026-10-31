@@ -53,6 +53,9 @@ export class PlayerRig {
   readonly #glowMaterials: THREE.MeshStandardMaterial[] = [];
   readonly #bladeMaterial: THREE.MeshStandardMaterial;
   readonly #pose: Pose = neutralPose();
+  readonly #tattoo = new THREE.Group();
+  readonly #tattooMaterial = new THREE.MeshBasicMaterial({ color: '#8b6bff' });
+  #parryFlash = 0;
   #gaitPhase = 0;
   #time = 0;
   #freeze = 0;
@@ -147,6 +150,51 @@ export class PlayerRig {
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.castShadow = true;
     });
+    this.#buildTattoo();
+  }
+
+  /** Mark of the Night Lycaon: violet brands on the bare torso and arms that flare at night. */
+  setMark(owned: boolean, night: number): void {
+    this.#tattoo.visible = owned;
+    for (const shoulder of [this.#shoulderR, this.#shoulderL]) {
+      for (const child of shoulder.children) if (child.userData.tattoo) child.visible = owned;
+    }
+    // Unlit brand: a dim violet by day, glowing (but never clipping to white) at night.
+    const k = 0.3 + 0.55 * night;
+    this.#tattooMaterial.color.setRGB(0.55 * k, 0.38 * k, 1.0 * k);
+  }
+
+  /** Bright blade flare on a perfect parry. */
+  parryFlash(): void {
+    this.#parryFlash = 1;
+  }
+
+  #buildTattoo(): void {
+    const stripe = new THREE.BoxGeometry(0.045, 0.34, 0.012);
+    for (const [x, z, rz] of [
+      [-0.1, -0.2, 0.5],
+      [0.1, -0.2, -0.5],
+      [-0.1, 0.2, -0.5],
+      [0.1, 0.2, 0.5],
+      [0, -0.215, 0],
+    ] as const) {
+      const m = new THREE.Mesh(stripe, this.#tattooMaterial);
+      m.position.set(x, 0.36, z);
+      m.rotation.z = rz;
+      this.#tattoo.add(m);
+    }
+    this.#torso.add(this.#tattoo);
+    const band = new THREE.TorusGeometry(0.07, 0.012, 4, 12);
+    for (const shoulder of [this.#shoulderR, this.#shoulderL]) {
+      for (const y of [-0.16, -0.27]) {
+        const ring = new THREE.Mesh(band, this.#tattooMaterial);
+        ring.position.y = y;
+        ring.rotation.x = HALF_PI;
+        ring.userData.tattoo = true;
+        shoulder.add(ring);
+      }
+    }
+    this.setMark(false, 0);
   }
 
   /** Hitstop: freeze the pose briefly when a blow lands. */
@@ -196,6 +244,18 @@ export class PlayerRig {
         rate = tickTime >= step.windupTicks && tickTime < step.windupTicks + step.activeTicks ? 45 : 18;
         break;
       }
+      case CharacterAction.Parry: {
+        // Blades crossed in front through the deflect window, then lowered.
+        const held = tickTime < tuning.parry.guardTicks;
+        target.right = held ? { pitch: 1.35, yaw: 0.62, roll: -0.15 } : { pitch: 0.6, yaw: -0.2, roll: 0.15 };
+        target.left = held ? { pitch: 1.35, yaw: -0.62, roll: 0.15 } : { pitch: 0.55, yaw: 0.25, roll: -0.15 };
+        target.crouch = -0.08;
+        target.legR = 0.25;
+        target.legL = -0.3;
+        target.lean = -0.06;
+        rate = tickTime < 2 ? 45 : 16;
+        break;
+      }
       case CharacterAction.Stagger:
         target.lean = 0.45;
         target.right = { pitch: 2.3, yaw: 0, roll: 0.6 };
@@ -233,7 +293,10 @@ export class PlayerRig {
       m.emissive.setRGB(0.25, 0.55, 1);
       m.emissiveIntensity = glow;
     }
-    this.#bladeMaterial.emissiveIntensity = motor.action === CharacterAction.Attack ? 0.9 : 0.08;
+    const deflecting = motor.action === CharacterAction.Parry && motor.actionTick < tuning.parry.perfectTicks;
+    this.#parryFlash = Math.max(0, this.#parryFlash - frameDt * 4);
+    this.#bladeMaterial.emissiveIntensity =
+      (motor.action === CharacterAction.Attack ? 0.9 : deflecting ? 1.5 : 0.08) + this.#parryFlash * 4;
   }
 
   #locomotionPose(target: Pose, speed: number, sprinting: boolean, frameDt: number): void {

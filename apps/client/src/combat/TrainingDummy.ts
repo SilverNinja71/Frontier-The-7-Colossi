@@ -1,8 +1,9 @@
-import type { MeleeHit } from '@frontier/combat-math';
+import type { DamageResult, MeleeHit } from '@frontier/combat-math';
 import { turnToward, yawFromDirection } from '@frontier/combat-math';
 import type { GroundPose, Hurtbox, MonsterDefinition } from '@frontier/shared-types';
 import * as THREE from 'three';
 import type { PhysicsWorld } from '../engine/PhysicsWorld.ts';
+import type { CombatTarget, HitReceipt } from './CombatSystem.ts';
 
 const TRACK_TURN_RATE = (55 * Math.PI) / 180;
 const DRILL_INTERVAL_TICKS = 150;
@@ -21,8 +22,9 @@ export interface DummyStepResult {
  * back, optional player tracking (forces flanking), and a telegraphed slam drill for
  * practising dodge i-frames.
  */
-export class TrainingDummy {
+export class TrainingDummy implements CombatTarget {
   readonly id = 'training-dummy-1';
+  readonly targetable = true;
   readonly group = new THREE.Group();
   readonly pose: GroundPose;
   readonly hurtboxes: readonly Hurtbox[];
@@ -156,8 +158,9 @@ export class TrainingDummy {
     return result;
   }
 
-  /** Applies authoritative damage and the visual reaction. Returns true if the dummy reset. */
-  receiveHit(hit: MeleeHit, amount: number, impact: number, fromX: number, fromZ: number): boolean {
+  /** Applies authoritative damage and the visual reaction. */
+  receiveHit(hit: MeleeHit, damage: DamageResult, impact: number, fromX: number, fromZ: number): HitReceipt {
+    const amount = damage.amount;
     this.#ticksSinceHit = 0;
     this.hp -= amount;
     // Push away from the attacker in the dummy's local frame.
@@ -172,11 +175,13 @@ export class TrainingDummy {
     this.#kick(localX * strength, localZ * strength);
     this.#flash = 1;
     this.#squash = 0.12 * strength;
-    if (this.hp <= 0) {
-      this.hp = this.maxHp;
-      return true;
-    }
-    return false;
+    const reset = this.hp <= 0;
+    if (reset) this.hp = this.maxHp;
+    return { applied: amount, immune: false, reset, events: 0 };
+  }
+
+  lockPoint(out: THREE.Vector3): THREE.Vector3 {
+    return out.set(this.pose.x, this.pose.y + 1.3, this.pose.z);
   }
 
   /** Render-rate animation. */

@@ -2,6 +2,8 @@ export interface GameEventMap {
   hit: {
     targetId: string;
     amount: number;
+    /** Landed but did nothing (colossus not exposed). */
+    immune: boolean;
     isCritical: boolean;
     isWeakPoint: boolean;
     comboStep: number;
@@ -11,6 +13,10 @@ export interface GameEventMap {
   };
   playerDamaged: { amount: number; staggered: boolean };
   perfectDodge: { x: number; y: number; z: number };
+  parry: { x: number; y: number; z: number; chain: number; resolveDamage: number };
+  guard: { x: number; y: number; z: number; amount: number; broken: boolean };
+  /** StalkerEvent flags from the brain or from combat resolution. */
+  stalker: { flags: number };
   toast: { text: string; tone: ToastTone };
 }
 

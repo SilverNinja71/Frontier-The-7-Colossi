@@ -57,7 +57,8 @@ const claw = (overrides: Partial<EnemyAttack> & Pick<EnemyAttack, 'id' | 'name'>
   maxRange: 4.2,
   cooldownTicks: 0,
   weight: 0,
-  staggerTicks: 12,
+  // Shorter than the gap to the next claw, so a hit player can still parry or roll out.
+  staggerTicks: 8,
   ...overrides,
 });
 

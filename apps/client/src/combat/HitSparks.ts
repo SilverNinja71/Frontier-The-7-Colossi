@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { softDotTexture } from './textures.ts';
 
 const CAPACITY = 160;
 
@@ -19,7 +20,8 @@ export class HitSparks {
     this.points = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({
-        size: 0.13,
+        size: 0.16,
+        map: softDotTexture(),
         vertexColors: true,
         transparent: true,
         blending: THREE.AdditiveBlending,
