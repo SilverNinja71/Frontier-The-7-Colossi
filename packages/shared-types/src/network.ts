@@ -30,6 +30,8 @@ export const InputButton = {
   Jump: 1 << 3,
   Parry: 1 << 4,
   Interact: 1 << 5,
+  /** Held while locked on: the character strafes and swings toward viewYaw. */
+  LockOn: 1 << 6,
 } as const;
 export type InputButtonFlag = (typeof InputButton)[keyof typeof InputButton];
 

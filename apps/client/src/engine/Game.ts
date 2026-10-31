@@ -36,7 +36,7 @@ import { PlayerRig } from './PlayerRig.ts';
 import { SceneManager } from './SceneManager.ts';
 import { isTouchDevice, TouchControls } from './TouchControls.ts';
 
-const ACTION_NAMES = ['free', 'dodge', 'attack', 'stagger', 'dead'] as const;
+const ACTION_NAMES = ['free', 'dodge', 'attack', 'stagger', 'dead', 'parry'] as const;
 const HUD_SYNC_INTERVAL = 1 / 15;
 const COMBO_WINDOW_MS = 2500;
 const DPS_ENGAGEMENT_GAP_MS = 5000;

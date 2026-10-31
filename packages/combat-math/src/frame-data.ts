@@ -3,7 +3,18 @@
  * rather than in assets so the server validates exactly what the client animates.
  */
 
-export interface AttackStep {
+/** Melee hitbox: a horizontal sector (reach × arc) extruded over a height band. */
+export interface MeleeShape {
+  /** Horizontal reach from the attack's origin, metres. */
+  reach: number;
+  /** Full sweep angle in degrees; ≥360 hits all around. */
+  arcDegrees: number;
+  /** Vertical band of the hitbox relative to the attacker's feet. */
+  heightMin: number;
+  heightMax: number;
+}
+
+export interface AttackStep extends MeleeShape {
   id: string;
   name: string;
   windupTicks: number;
@@ -11,13 +22,6 @@ export interface AttackStep {
   recoveryTicks: number;
   staminaCost: number;
   motionValue: number;
-  /** Horizontal reach from the attacker's origin, metres. */
-  reach: number;
-  /** Full sweep angle in degrees; ≥360 hits all around. */
-  arcDegrees: number;
-  /** Vertical band of the hitbox relative to the attacker's feet. */
-  heightMin: number;
-  heightMax: number;
   /** Forward travel during windup + active, metres. */
   lunge: number;
   /** Impulse applied to the target's hit reaction (visual on client, poise on server). */
@@ -94,6 +98,19 @@ export interface MotorTuning {
     distance: number;
     staminaCost: number;
   };
+  parry: {
+    ticks: number;
+    /** actionTick < perfectTicks: deflect (no damage, builds parry chains). */
+    perfectTicks: number;
+    /** actionTick < guardTicks: late parry, blocks part of the damage for stamina. */
+    guardTicks: number;
+    staminaCost: number;
+    /** Stamina returned on a perfect parry so chains stay sustainable. */
+    perfectRefund: number;
+    guardStaminaDamage: number;
+    /** Attacks from outside ± this angle (degrees) of facing cannot be parried. */
+    frontalArcDegrees: number;
+  };
   sprintDrainPerSec: number;
   staminaRegenPerSec: number;
   /** Ticks after any stamina spend before regen resumes. */
@@ -114,6 +131,15 @@ export const DEFAULT_MOTOR_TUNING: MotorTuning = {
     iframeEnd: 9,
     distance: 4.2,
     staminaCost: 22,
+  },
+  parry: {
+    ticks: 16,
+    perfectTicks: 6,
+    guardTicks: 11,
+    staminaCost: 8,
+    perfectRefund: 10,
+    guardStaminaDamage: 24,
+    frontalArcDegrees: 200,
   },
   sprintDrainPerSec: 16,
   staminaRegenPerSec: 32,

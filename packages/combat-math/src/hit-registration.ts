@@ -1,5 +1,5 @@
 import type { GroundPose, Hurtbox } from '@frontier/shared-types';
-import type { AttackStep } from './frame-data.ts';
+import type { MeleeShape } from './frame-data.ts';
 
 export interface MeleeHit {
   hurtbox: Hurtbox;
@@ -16,7 +16,7 @@ export interface MeleeHit {
  */
 export function testMeleeHit(
   attacker: GroundPose,
-  step: AttackStep,
+  step: MeleeShape,
   target: GroundPose,
   hurtboxes: readonly Hurtbox[],
 ): MeleeHit | null {

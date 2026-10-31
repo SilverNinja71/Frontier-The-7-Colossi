@@ -7,13 +7,14 @@ import { attackStepTotalTicks, type AttackStep, type MotorTuning, type Moveset }
  * runs the identical code authoritatively; only collision resolution (Rapier) sits outside.
  */
 
-export const Buffered = { None: 0, Attack: 1, Dodge: 2 } as const;
+export const Buffered = { None: 0, Attack: 1, Dodge: 2, Parry: 3 } as const;
 export type BufferedId = (typeof Buffered)[keyof typeof Buffered];
 
 export const MotorEvent = {
   AttackStarted: 1 << 0,
   DodgeStarted: 1 << 1,
   Exhausted: 1 << 2,
+  ParryStarted: 1 << 3,
 } as const;
 
 export interface MotorState {
@@ -79,14 +80,18 @@ export function stepMotor(s: MotorState, input: InputFrame, ctx: MotorContext): 
   const { moveset, tuning, dt } = ctx;
   let events = 0;
 
-  // Buffer presses so slightly-early inputs still chain. Dodge outranks attack.
+  // Buffer presses so slightly-early inputs still chain. Dodge > parry > attack.
   if (input.pressed & InputButton.Dodge) {
     s.buffered = Buffered.Dodge;
     s.bufferTicks = tuning.inputBufferTicks;
-  } else if (input.pressed & InputButton.Attack && s.buffered !== Buffered.Dodge) {
+  } else if (input.pressed & InputButton.Parry && s.buffered !== Buffered.Dodge) {
+    s.buffered = Buffered.Parry;
+    s.bufferTicks = tuning.inputBufferTicks;
+  } else if (input.pressed & InputButton.Attack && s.buffered === Buffered.None) {
     s.buffered = Buffered.Attack;
     s.bufferTicks = tuning.inputBufferTicks;
   }
+  const locked = (input.held & InputButton.LockOn) !== 0;
 
   // Camera-relative stick → world: right = (cos, -sin), forward = (-sin, -cos).
   const sinV = Math.sin(input.viewYaw);
@@ -109,6 +114,9 @@ export function stepMotor(s: MotorState, input: InputFrame, ctx: MotorContext): 
     case CharacterAction.Stagger:
       if (s.actionTick >= s.actionDuration) endAction(s);
       break;
+    case CharacterAction.Parry:
+      if (s.actionTick >= tuning.parry.ticks) endAction(s);
+      break;
     case CharacterAction.Attack: {
       const step = currentStep(s, moveset);
       if (
@@ -120,11 +128,13 @@ export function stepMotor(s: MotorState, input: InputFrame, ctx: MotorContext): 
         clearBuffer(s);
       }
       if (s.actionTick >= step.windupTicks + step.activeTicks) {
-        // Recovery is the cancel window: dodge-cancel first, then combo, else finish.
+        // Recovery is the cancel window: dodge, then parry, then combo, else finish.
         if (s.buffered === Buffered.Dodge && canSpend(s)) {
           events |= startDodge(s, moveX, moveZ, moveMag, tuning);
+        } else if (s.buffered === Buffered.Parry && canSpend(s)) {
+          events |= startParry(s, moveX, moveZ, moveMag, input.viewYaw, locked, tuning);
         } else if (s.comboQueued && canSpend(s)) {
-          events |= startAttack(s, s.comboStep + 1, moveX, moveZ, moveMag, input.viewYaw, moveset, tuning);
+          events |= startAttack(s, s.comboStep + 1, moveX, moveZ, moveMag, input.viewYaw, locked, moveset, tuning);
         } else if (s.actionTick >= attackStepTotalTicks(step)) {
           endAction(s);
         }
@@ -136,8 +146,10 @@ export function stepMotor(s: MotorState, input: InputFrame, ctx: MotorContext): 
   if (s.action === CharacterAction.Free) {
     if (s.buffered === Buffered.Dodge && canSpend(s)) {
       events |= startDodge(s, moveX, moveZ, moveMag, tuning);
+    } else if (s.buffered === Buffered.Parry && canSpend(s)) {
+      events |= startParry(s, moveX, moveZ, moveMag, input.viewYaw, locked, tuning);
     } else if (s.buffered === Buffered.Attack && canSpend(s)) {
-      events |= startAttack(s, 0, moveX, moveZ, moveMag, input.viewYaw, moveset, tuning);
+      events |= startAttack(s, 0, moveX, moveZ, moveMag, input.viewYaw, locked, moveset, tuning);
     }
   }
 
@@ -147,15 +159,20 @@ export function stepMotor(s: MotorState, input: InputFrame, ctx: MotorContext): 
 
   switch (s.action) {
     case CharacterAction.Free: {
-      if (moveMag < 0.05) break;
-      s.sprinting = (input.held & InputButton.Sprint) !== 0 && !s.exhausted && s.stamina > 0;
-      const speed = (s.sprinting ? tuning.sprintSpeed : tuning.runSpeed) * moveMag * ctx.speedMultiplier;
-      const dirX = moveX / moveMag;
-      const dirZ = moveZ / moveMag;
-      velX = dirX * speed;
-      velZ = dirZ * speed;
-      s.facingYaw = turnToward(s.facingYaw, yawFromDirection(dirX, dirZ), tuning.turnRate * dt);
-      if (s.sprinting && drain(s, tuning.sprintDrainPerSec * dt, tuning)) events |= MotorEvent.Exhausted;
+      const moving = moveMag >= 0.05;
+      if (moving) {
+        s.sprinting = (input.held & InputButton.Sprint) !== 0 && !s.exhausted && s.stamina > 0;
+        const speed = (s.sprinting ? tuning.sprintSpeed : tuning.runSpeed) * moveMag * ctx.speedMultiplier;
+        velX = (moveX / moveMag) * speed;
+        velZ = (moveZ / moveMag) * speed;
+        if (s.sprinting && drain(s, tuning.sprintDrainPerSec * dt, tuning)) events |= MotorEvent.Exhausted;
+      }
+      // Locked on: strafe while facing the target (sprinting breaks the strafe).
+      if (locked && !s.sprinting) {
+        s.facingYaw = turnToward(s.facingYaw, input.viewYaw, tuning.turnRate * dt);
+      } else if (moving) {
+        s.facingYaw = turnToward(s.facingYaw, yawFromDirection(moveX, moveZ), tuning.turnRate * dt);
+      }
       break;
     }
     case CharacterAction.Dodge: {
@@ -197,6 +214,47 @@ export function activeAttackStep(s: MotorState, moveset: Moveset): AttackStep | 
   if (s.action !== CharacterAction.Attack) return null;
   const step = currentStep(s, moveset);
   return s.actionTick >= step.windupTicks && s.actionTick < step.windupTicks + step.activeTicks ? step : null;
+}
+
+export type DefenseOutcome = 'dodged' | 'parried' | 'guarded' | 'hit';
+
+export interface IncomingAttack {
+  parryable: boolean;
+  /** Direction from the defender toward the attack's origin; omit to treat it as frontal. */
+  fromX?: number;
+  fromZ?: number;
+}
+
+/**
+ * How the defender's current action meets an incoming blow. Pure: callers then apply
+ * applyParrySuccess / applyGuard / damage. Server and client resolve hits identically.
+ */
+export function resolveIncomingAttack(s: MotorState, tuning: MotorTuning, attack: IncomingAttack): DefenseOutcome {
+  if (isInvulnerable(s, tuning)) return 'dodged';
+  if (!attack.parryable || s.action !== CharacterAction.Parry || s.actionTick >= tuning.parry.guardTicks) return 'hit';
+  if (attack.fromX !== undefined && attack.fromZ !== undefined) {
+    const length = Math.hypot(attack.fromX, attack.fromZ);
+    if (length > 1e-6) {
+      const cosToAttack = (-Math.sin(s.facingYaw) * attack.fromX - Math.cos(s.facingYaw) * attack.fromZ) / length;
+      if (cosToAttack < Math.cos((tuning.parry.frontalArcDegrees * Math.PI) / 360)) return 'hit';
+    }
+  }
+  return s.actionTick < tuning.parry.perfectTicks ? 'parried' : 'guarded';
+}
+
+/** Perfect parry: refund stamina and free the character to deflect the next blow or counter. */
+export function applyParrySuccess(s: MotorState, tuning: MotorTuning): void {
+  s.stamina = Math.min(s.maxStamina, s.stamina + tuning.parry.perfectRefund);
+  s.exhausted = false;
+  endAction(s);
+}
+
+/** Late parry: the blow is blocked for stamina. Returns true on guard break (staggered). */
+export function applyGuard(s: MotorState, tuning: MotorTuning, staggerTicks = 20): boolean {
+  drain(s, tuning.parry.guardStaminaDamage, tuning);
+  if (s.stamina > 0) return false;
+  applyStagger(s, staggerTicks);
+  return true;
 }
 
 export function isInvulnerable(s: MotorState, tuning: MotorTuning): boolean {
@@ -296,6 +354,24 @@ function startDodge(s: MotorState, moveX: number, moveZ: number, moveMag: number
   return MotorEvent.DodgeStarted | (drain(s, tuning.dodge.staminaCost, tuning) ? MotorEvent.Exhausted : 0);
 }
 
+function startParry(
+  s: MotorState,
+  moveX: number,
+  moveZ: number,
+  moveMag: number,
+  viewYaw: number,
+  locked: boolean,
+  tuning: MotorTuning,
+): number {
+  s.action = CharacterAction.Parry;
+  s.actionTick = 0;
+  s.comboQueued = false;
+  if (locked) s.facingYaw = viewYaw;
+  else if (moveMag > 0.3) s.facingYaw = yawFromDirection(moveX, moveZ);
+  clearBuffer(s);
+  return MotorEvent.ParryStarted | (drain(s, tuning.parry.staminaCost, tuning) ? MotorEvent.Exhausted : 0);
+}
+
 function startAttack(
   s: MotorState,
   comboStep: number,
@@ -303,6 +379,7 @@ function startAttack(
   moveZ: number,
   moveMag: number,
   viewYaw: number,
+  locked: boolean,
   moveset: Moveset,
   tuning: MotorTuning,
 ): number {
@@ -311,8 +388,8 @@ function startAttack(
   s.comboStep = comboStep;
   s.comboQueued = false;
   s.attackSerial++;
-  // Stick direction wins; with no stick the swing goes where the camera looks.
-  s.facingYaw = moveMag > 0.3 ? yawFromDirection(moveX, moveZ) : viewYaw;
+  // Locked on: swing at the target. Otherwise the stick wins, then the camera direction.
+  s.facingYaw = locked ? viewYaw : moveMag > 0.3 ? yawFromDirection(moveX, moveZ) : viewYaw;
   clearBuffer(s);
   const cost = currentStep(s, moveset).staminaCost;
   return MotorEvent.AttackStarted | (drain(s, cost, tuning) ? MotorEvent.Exhausted : 0);

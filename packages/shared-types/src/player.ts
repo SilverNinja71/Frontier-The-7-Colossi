@@ -11,6 +11,7 @@ export const CharacterAction = {
   Attack: 2,
   Stagger: 3,
   Dead: 4,
+  Parry: 5,
 } as const;
 export type CharacterActionId = (typeof CharacterAction)[keyof typeof CharacterAction];
 
