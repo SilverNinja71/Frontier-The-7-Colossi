@@ -489,6 +489,11 @@ function BossFrame() {
       </div>
       <div className="font-display text-lg tracking-[0.25em] text-violet-50 uppercase [text-shadow:0_2px_8px_#000] sm:text-xl">
         {boss.name}
+        {boss.eclipsed && (
+          <span className="ml-2 inline-block -translate-y-0.5 rounded border border-fuchsia-400/70 bg-fuchsia-700/40 px-1.5 py-0.5 align-middle font-sans text-[10px] font-bold tracking-widest text-fuchsia-100">
+            ECLIPSE
+          </span>
+        )}
       </div>
       <div className="relative mt-1 h-3 overflow-hidden rounded-sm border border-black/70 bg-black/70">
         <div className="absolute inset-y-0 left-0 bg-white/60 transition-[width] delay-200 duration-700" style={{ width: `${pct}%` }} />

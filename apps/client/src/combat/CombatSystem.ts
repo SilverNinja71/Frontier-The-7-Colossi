@@ -44,7 +44,7 @@ export interface CombatTarget {
 }
 
 const PRECISION_XP = 12;
-const GUARD_DAMAGE_FACTOR = 0.35;
+const GUARD_DAMAGE_FACTOR = 0.5;
 
 /**
  * Resolves blows both ways each sim tick: the player's swings against targets, and the
@@ -124,6 +124,7 @@ export class CombatSystem {
     const motor = this.player.motor;
     const outcome = resolveIncomingAttack(motor, this.tuning, {
       parryable: hit.attack.parryable,
+      deflectTicks: hit.attack.deflectTicks,
       fromX: stalker.pose.x - pose.x,
       fromZ: stalker.pose.z - pose.z,
     });

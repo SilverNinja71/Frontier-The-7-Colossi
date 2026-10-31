@@ -121,7 +121,8 @@ export const SHADOW_STALKER: ColossusDefinition = {
   stats: {
     maxHp: STALKER_TUNING.maxResolve,
     maxStamina: 0,
-    attack: 160,
+    // Brutal on purpose: claws ~195, lunge ~300, howl ~390 against starter defense.
+    attack: 260,
     defense: 40,
     agility: 0,
     critChance: 0,

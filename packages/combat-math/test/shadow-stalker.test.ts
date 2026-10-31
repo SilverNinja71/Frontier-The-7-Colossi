@@ -6,7 +6,10 @@ import {
   DeterministicRng,
   StalkerEvent,
   StalkerPhase,
+  STALKER_ATTACKS,
   STALKER_TUNING,
+  SANDBOX_DAY_SECONDS,
+  DAY_PERIODS,
   applyGuard,
   applyParrySuccess,
   createMotorState,
@@ -16,6 +19,7 @@ import {
   resolveIncomingAttack,
   stalkerAttackResolved,
   stalkerStruck,
+  stalkerTargetFell,
   stepMotor,
   stepStalker,
   summonStalker,
@@ -51,6 +55,14 @@ describe('parry', () => {
     expect(outcomes.slice(perfectTicks, guardTicks).every((o) => o === 'guarded')).toBe(true);
     expect(outcomes.slice(guardTicks, ticks).every((o) => o === 'hit')).toBe(true);
     expect(s.action).toBe(CharacterAction.Free);
+  });
+
+  it('honours a tighter per-attack deflect window', () => {
+    const s = createMotorState(100);
+    stepMotor(s, frame({ pressed: InputButton.Parry }), ctx);
+    for (let t = 0; t < 4; t++) stepMotor(s, frame(), ctx); // actionTick 4
+    expect(resolveIncomingAttack(s, DEFAULT_MOTOR_TUNING, { parryable: true })).toBe('parried');
+    expect(resolveIncomingAttack(s, DEFAULT_MOTOR_TUNING, { parryable: true, deflectTicks: 4 })).toBe('guarded');
   });
 
   it('cannot deflect perilous attacks or blows from behind', () => {
@@ -216,5 +228,94 @@ describe('Shadow Stalker', () => {
     const c = simulate('perfect', 900, 43).log.trace;
     expect(a).toEqual(b);
     expect(a).not.toEqual(c);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Difficulty envelope: brutal, but beatable with near-flawless reads.
+// ---------------------------------------------------------------------------
+
+const NIGHT_TICKS = Math.round(SANDBOX_DAY_SECONDS * (1 - DAY_PERIODS.night + DAY_PERIODS.dawn) * 30);
+
+/** One new-moon night against a player who reads `skill` of strikes correctly. */
+function fightNight(skill: number, seed: number): { subdued: boolean; died: boolean } {
+  const s = createStalkerState();
+  summonStalker(s, 0, -9, 0);
+  const rng = new DeterministicRng(1000 + seed);
+  const luck = new DeterministicRng(9000 + seed);
+  const target = { x: 0, y: 0, z: 0, yaw: 0 };
+  const resolved = new Set<number>();
+  let hp = 1000;
+  let downTicks = 0;
+  let died = false;
+  for (let t = 0; t < NIGHT_TICKS; t++) {
+    const out = stepStalker(s, { target, targetAlive: downTicks === 0, isNight: true, rng, dt: SIM_DT });
+    s.x += out.velX * SIM_DT;
+    s.z += out.velZ * SIM_DT;
+    if (downTicks > 0) {
+      if (--downTicks === 0) hp = 1000;
+      continue;
+    }
+    if (out.hit && !resolved.has(out.hit.serial) && testMeleeHit(out.hit.pose, out.hit.attack, target, PLAYER_HURTBOXES)) {
+      resolved.add(out.hit.serial);
+      const read = luck.next() < skill;
+      const outcome: DefenseOutcome = read ? (out.hit.attack.parryable ? 'parried' : 'dodged') : 'hit';
+      if (stalkerAttackResolved(s, outcome).events & StalkerEvent.Subdued) return { subdued: true, died };
+      if (outcome === 'hit') {
+        hp -= Math.round((260 * out.hit.attack.motionValue * 100) / 120);
+        if (hp <= 0) {
+          died = true;
+          downTicks = 135;
+          stalkerTargetFell(s);
+        }
+      }
+    }
+    // A strong punisher: ~70 on the heart every half second while it is Exposed.
+    if (s.phase === StalkerPhase.Exposed && t % 15 === 0 && luck.next() < skill) {
+      if (stalkerStruck(s, 'weakpoint', 70).events & StalkerEvent.Subdued) return { subdued: true, died };
+    }
+  }
+  return { subdued: false, died };
+}
+
+describe('Shadow Stalker difficulty', () => {
+  const nights = (skill: number) => Array.from({ length: 24 }, (_, seed) => fightNight(skill, seed));
+
+  it('stays beatable for a flawless player within one night', () => {
+    expect(nights(1).filter((n) => n.subdued).length).toBeGreaterThanOrEqual(22);
+  });
+
+  it('is out of reach for a player who misreads one strike in five', () => {
+    const results = nights(0.8);
+    expect(results.filter((n) => n.subdued).length).toBe(0);
+    expect(results.filter((n) => !n.died).length).toBeLessThanOrEqual(1);
+  });
+
+  it('rolls hesitations so the same attack is not always timed alike', () => {
+    const s = createStalkerState();
+    summonStalker(s, 0, -3, 0);
+    const rng = new DeterministicRng(3);
+    const windups = new Set<number>();
+    for (let t = 0; t < 30 * 120; t++) {
+      stepStalker(s, { target: { x: 0, y: 0, z: 0, yaw: 0 }, targetAlive: true, isNight: true, rng, dt: SIM_DT });
+      if (s.attack?.id === 'rending-claw-1') windups.add(s.windupTicks);
+    }
+    expect(windups.size).toBeGreaterThan(2);
+    const base = STALKER_ATTACKS['rending-claw-1']!;
+    for (const w of windups) expect(w).toBeLessThanOrEqual(base.windupTicks + base.feintTicks);
+  });
+
+  it('enters Eclipse below half Resolve and feeds when its target falls', () => {
+    const s = createStalkerState();
+    summonStalker(s, 0, -3, 0);
+    s.phase = StalkerPhase.Exposed;
+    const half = STALKER_TUNING.maxResolve * STALKER_TUNING.eclipseAt;
+    const { events } = stalkerStruck(s, 'weakpoint', STALKER_TUNING.maxResolve - half + 1);
+    expect(events & StalkerEvent.Eclipsed).toBeTruthy();
+    expect(s.eclipsed).toBe(true);
+    s.parryChain = 4;
+    const regained = stalkerTargetFell(s);
+    expect(regained).toBeCloseTo(STALKER_TUNING.maxResolve * STALKER_TUNING.feedOnFall);
+    expect(s.parryChain).toBe(0);
   });
 });

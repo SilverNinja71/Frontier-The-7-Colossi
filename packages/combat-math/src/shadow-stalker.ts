@@ -6,9 +6,11 @@ import type { DeterministicRng } from './rng.ts';
 
 /**
  * The Shadow Stalker — Unique Colossus #1. Roams only on new-moon nights and cannot be
- * worn down by raw damage: perfect parries build a chain, three in a row leave it Exposed,
- * and only then do blades bite. Pure and deterministic like the player motor, so the
- * authoritative server runs this exact brain; the client only renders it.
+ * worn down by raw damage: perfect parries build a chain, five in a row leave it Exposed,
+ * and only then do blades bite. Tuned to be brutal but fair: tight deflect windows and
+ * hesitating windups demand reading each strike, and below half Resolve it enters Eclipse.
+ * Pure and deterministic like the player motor, so the authoritative server runs this
+ * exact brain; the client only renders it.
  */
 
 export interface EnemyAttack extends MeleeShape {
@@ -22,9 +24,13 @@ export interface EnemyAttack extends MeleeShape {
   motionValue: number;
   /** `self`: hitbox rides the attacker. `target`: ring where the target stood at commit. */
   origin: 'self' | 'target';
-  /** Metres travelled from `travelStartTick` to the end of the active frames. */
+  /** Metres travelled from `travelLeadTicks` before the strike to the end of the active frames. */
   travel: number | 'to-target';
-  travelStartTick: number;
+  travelLeadTicks: number;
+  /** Perfect-parry window against this attack, in ticks; tighter than the player's default. */
+  deflectTicks: number;
+  /** Up to this many extra windup ticks, rolled per attack: timing must be read, not memorised. */
+  feintTicks: number;
   /** Stops tracking the target this many ticks before the windup ends. */
   commitTicks: number;
   minRange: number;
@@ -40,7 +46,7 @@ export interface EnemyAttack extends MeleeShape {
 }
 
 const claw = (overrides: Partial<EnemyAttack> & Pick<EnemyAttack, 'id' | 'name'>): EnemyAttack => ({
-  windupTicks: 11,
+  windupTicks: 10,
   activeTicks: 3,
   recoveryTicks: 5,
   parryable: true,
@@ -51,7 +57,9 @@ const claw = (overrides: Partial<EnemyAttack> & Pick<EnemyAttack, 'id' | 'name'>
   heightMin: 0,
   heightMax: 2.2,
   travel: 1.2,
-  travelStartTick: 4,
+  travelLeadTicks: 6,
+  deflectTicks: 5,
+  feintTicks: 6,
   commitTicks: 3,
   minRange: 0,
   maxRange: 4.2,
@@ -64,20 +72,21 @@ const claw = (overrides: Partial<EnemyAttack> & Pick<EnemyAttack, 'id' | 'name'>
 
 export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
   'rending-claw-1': claw({ id: 'rending-claw-1', name: 'Rending Claws', cooldownTicks: 75, weight: 3, next: 'rending-claw-2' }),
-  'rending-claw-2': claw({ id: 'rending-claw-2', name: 'Rending Claws', windupTicks: 8, next: 'rending-claw-3' }),
+  'rending-claw-2': claw({ id: 'rending-claw-2', name: 'Rending Claws', windupTicks: 7, next: 'rending-claw-3' }),
   'rending-claw-3': claw({
     id: 'rending-claw-3',
     name: 'Rending Claws',
-    windupTicks: 10,
+    windupTicks: 9,
     recoveryTicks: 22,
     motionValue: 1.25,
     travel: 1.6,
+    feintTicks: 8,
     staggerTicks: 18,
   }),
   'shadow-lunge': {
     id: 'shadow-lunge',
     name: 'Shadow Lunge',
-    windupTicks: 18,
+    windupTicks: 16,
     activeTicks: 7,
     recoveryTicks: 22,
     parryable: true,
@@ -88,7 +97,9 @@ export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
     heightMin: 0,
     heightMax: 2.2,
     travel: 8,
-    travelStartTick: 18,
+    travelLeadTicks: 0,
+    deflectTicks: 4,
+    feintTicks: 10,
     commitTicks: 5,
     minRange: 4.5,
     maxRange: 12,
@@ -111,7 +122,9 @@ export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
     heightMin: 0,
     heightMax: 3,
     travel: 0,
-    travelStartTick: 0,
+    travelLeadTicks: 0,
+    deflectTicks: 0,
+    feintTicks: 0,
     commitTicks: 0,
     minRange: 0,
     maxRange: 5.5,
@@ -133,7 +146,9 @@ export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
     heightMin: 0,
     heightMax: 3,
     travel: 'to-target',
-    travelStartTick: 14,
+    travelLeadTicks: 10,
+    deflectTicks: 0,
+    feintTicks: 6,
     commitTicks: 10,
     minRange: 6,
     maxRange: 18,
@@ -146,10 +161,10 @@ export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
 const OPENERS = Object.values(STALKER_ATTACKS).filter((a) => a.weight > 0);
 
 export const STALKER_TUNING = {
-  maxResolve: 2400,
+  maxResolve: 5000,
   /** Consecutive perfect parries that leave it Exposed. */
-  exposeChain: 3,
-  exposedTicks: 105,
+  exposeChain: 5,
+  exposedTicks: 75,
   recoilTicks: 20,
   emergeTicks: 60,
   dissolveTicks: 60,
@@ -164,9 +179,16 @@ export const STALKER_TUNING = {
   intentTimeoutTicks: 90,
   leashRadius: 27,
   /** Resolve lost per perfect parry: base × (1 + 0.5 × (chain − 1)). */
-  parryResolveDamage: 50,
+  parryResolveDamage: 40,
   /** Share of blade damage that lands on resolve outside the heart while Exposed. */
-  exposedBodyFactor: 0.6,
+  exposedBodyFactor: 0.25,
+  /** Below this share of Resolve it enters Eclipse: faster, relentless. */
+  eclipseAt: 0.5,
+  eclipseWindupFactor: 0.8,
+  eclipseSpeedFactor: 1.2,
+  eclipseIdleFactor: 0.5,
+  /** Share of max Resolve it regains each time it kills its target. */
+  feedOnFall: 0.35,
 } as const;
 
 export const StalkerPhase = {
@@ -192,6 +214,8 @@ export const StalkerEvent = {
   /** Dawn broke and it dissolved with the player still standing. */
   Survived: 1 << 5,
   Recoiled: 1 << 6,
+  /** Crossed into Eclipse (second phase). */
+  Eclipsed: 1 << 7,
 } as const;
 
 export interface StalkerState {
@@ -201,6 +225,8 @@ export interface StalkerState {
   z: number;
   yaw: number;
   attack: EnemyAttack | null;
+  /** Effective windup of the current attack after Eclipse speed-up and the rolled feint. */
+  windupTicks: number;
   /** Increments per attack instance; resolve each instance against a target once. */
   attackSerial: number;
   /** Target snapshot at commit: pounce landing point / lunge heading. */
@@ -216,6 +242,7 @@ export interface StalkerState {
   cooldowns: Record<string, number>;
   resolve: number;
   parryChain: number;
+  eclipsed: boolean;
 }
 
 export interface StalkerContext {
@@ -249,6 +276,7 @@ export function createStalkerState(): StalkerState {
     z: 0,
     yaw: 0,
     attack: null,
+    windupTicks: 0,
     attackSerial: 0,
     aimX: 0,
     aimZ: 0,
@@ -262,6 +290,7 @@ export function createStalkerState(): StalkerState {
     cooldowns: {},
     resolve: STALKER_TUNING.maxResolve,
     parryChain: 0,
+    eclipsed: false,
   };
 }
 
@@ -294,7 +323,8 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
   const dz = ctx.target.z - s.z;
   const dist = Math.hypot(dx, dz);
   const toTargetYaw = yawFromDirection(dx, dz);
-  const maxTurn = T.turnRate * ctx.dt;
+  const speed = s.eclipsed ? T.eclipseSpeedFactor : 1;
+  const maxTurn = T.turnRate * speed * ctx.dt;
 
   // Dawn ends every encounter that is still going.
   const engaged = s.phase === StalkerPhase.Prowl || s.phase === StalkerPhase.Attack || s.phase === StalkerPhase.Recoil;
@@ -318,21 +348,22 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
         if (!s.intent || s.intentTicks++ > T.intentTimeoutTicks) pickIntent(s, ctx.rng);
         const intent = s.intent;
         if (intent && dist >= intent.minRange && dist <= intent.maxRange) {
-          events |= startAttack(s, intent);
+          events |= startAttack(s, intent, ctx.rng);
           break;
         }
       }
       // Circle the target inside the preferred band, closing in when an attack needs it.
       const want = s.idleTicks === 0 && s.intent ? s.intent : null;
       let radial = 0;
-      if (want && dist > want.maxRange) radial = T.chaseSpeed;
-      else if (want && dist < want.minRange) radial = -T.prowlSpeed;
-      else if (dist > T.bandMax) radial = T.prowlSpeed;
-      else if (dist < T.bandMin) radial = -T.prowlSpeed * 0.8;
+      const chasing = want !== null && dist > want.maxRange;
+      if (chasing) radial = T.chaseSpeed * speed;
+      else if (want && dist < want.minRange) radial = -T.prowlSpeed * speed;
+      else if (dist > T.bandMax) radial = T.prowlSpeed * speed;
+      else if (dist < T.bandMin) radial = -T.prowlSpeed * 0.8 * speed;
       if (dist > 1e-3) {
         const ux = dx / dist;
         const uz = dz / dist;
-        const tangential = radial === T.chaseSpeed ? 0 : T.prowlSpeed * 0.65 * s.circleDir;
+        const tangential = chasing ? 0 : T.prowlSpeed * 0.65 * speed * s.circleDir;
         velX = ux * radial - uz * tangential;
         velZ = uz * radial + ux * tangential;
       }
@@ -343,28 +374,32 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
     case StalkerPhase.Attack: {
       const a = s.attack!;
       const t = s.phaseTick;
-      const commitTick = a.windupTicks - a.commitTicks;
+      const windup = s.windupTicks;
+      const commitTick = windup - a.commitTicks;
+      const travelStart = windup - a.travelLeadTicks;
       if (t < commitTick) {
         s.yaw = turnToward(s.yaw, toTargetYaw, maxTurn * 1.5);
       } else if (t === commitTick) {
         s.aimX = ctx.target.x;
         s.aimZ = ctx.target.z;
       }
-      if (t === a.travelStartTick) beginTravel(s, a);
-      if (t >= a.travelStartTick && t < a.windupTicks + a.activeTicks && s.travelPerTick > 0) {
+      if (t === travelStart) beginTravel(s, a);
+      if (t >= travelStart && t < windup + a.activeTicks && s.travelPerTick > 0) {
         velX = (s.travelDirX * s.travelPerTick) / ctx.dt;
         velZ = (s.travelDirZ * s.travelPerTick) / ctx.dt;
       }
-      if (t >= a.windupTicks && t < a.windupTicks + a.activeTicks) {
+      if (t >= windup && t < windup + a.activeTicks) {
         const pose =
           a.origin === 'target'
             ? { x: s.aimX, y: 0, z: s.aimZ, yaw: s.yaw }
             : { x: s.x + velX * ctx.dt, y: 0, z: s.z + velZ * ctx.dt, yaw: s.yaw };
         hit = { attack: a, serial: s.attackSerial, pose };
       }
-      if (t >= a.windupTicks + a.activeTicks + a.recoveryTicks) {
-        const next = a.next ? STALKER_ATTACKS[a.next] : undefined;
-        if (next && ctx.targetAlive) events |= startAttack(s, next);
+      if (t >= windup + a.activeTicks + a.recoveryTicks) {
+        // In Eclipse an unparried lunge flows straight into the claw combo.
+        const nextId = a.next ?? (s.eclipsed && a.id === 'shadow-lunge' ? 'rending-claw-1' : undefined);
+        const next = nextId ? STALKER_ATTACKS[nextId] : undefined;
+        if (next && ctx.targetAlive) events |= startAttack(s, next, ctx.rng);
         else startProwl(s, ctx, 14 + Math.floor(ctx.rng.next() * 22));
       }
       break;
@@ -431,6 +466,18 @@ export function stalkerAttackResolved(s: StalkerState, outcome: DefenseOutcome):
 }
 
 /**
+ * The target fell to it: it feeds, regaining part of its Resolve, and the chain is lost.
+ * Returns the Resolve regained.
+ */
+export function stalkerTargetFell(s: StalkerState): number {
+  if (!stalkerTargetable(s)) return 0;
+  const before = s.resolve;
+  s.resolve = Math.min(STALKER_TUNING.maxResolve, s.resolve + STALKER_TUNING.maxResolve * STALKER_TUNING.feedOnFall);
+  s.parryChain = 0;
+  return s.resolve - before;
+}
+
+/**
  * A blade connected. Raw damage is ignored unless Exposed; then the heart (weak point)
  * takes it in full and the body a share. Returns resolve actually removed (0 = immune).
  */
@@ -444,9 +491,15 @@ export function stalkerStruck(s: StalkerState, hurtboxKind: 'body' | 'weakpoint'
 
 function damageResolve(s: StalkerState, amount: number): number {
   s.resolve = Math.max(0, s.resolve - amount);
-  if (s.resolve > 0) return 0;
-  setPhase(s, StalkerPhase.Subdued);
-  return StalkerEvent.Subdued;
+  if (s.resolve <= 0) {
+    setPhase(s, StalkerPhase.Subdued);
+    return StalkerEvent.Subdued;
+  }
+  if (!s.eclipsed && s.resolve <= STALKER_TUNING.maxResolve * STALKER_TUNING.eclipseAt) {
+    s.eclipsed = true;
+    return StalkerEvent.Eclipsed;
+  }
+  return 0;
 }
 
 function setPhase(s: StalkerState, phase: StalkerPhaseId): void {
@@ -458,7 +511,7 @@ function setPhase(s: StalkerState, phase: StalkerPhaseId): void {
 
 function startProwl(s: StalkerState, ctx: StalkerContext, idleTicks: number): void {
   setPhase(s, StalkerPhase.Prowl);
-  s.idleTicks = idleTicks;
+  s.idleTicks = s.eclipsed ? Math.round(idleTicks * STALKER_TUNING.eclipseIdleFactor) : idleTicks;
   s.intent = null;
   if (ctx.rng.next() < 0.5) s.circleDir = s.circleDir === 1 ? -1 : 1;
 }
@@ -482,9 +535,11 @@ function pickIntent(s: StalkerState, rng: DeterministicRng): void {
   }
 }
 
-function startAttack(s: StalkerState, attack: EnemyAttack): number {
+function startAttack(s: StalkerState, attack: EnemyAttack, rng: DeterministicRng): number {
   setPhase(s, StalkerPhase.Attack);
   s.attack = attack;
+  const base = s.eclipsed ? Math.round(attack.windupTicks * STALKER_TUNING.eclipseWindupFactor) : attack.windupTicks;
+  s.windupTicks = base + Math.floor(rng.next() * (attack.feintTicks + 1));
   s.attackSerial++;
   s.intent = null;
   s.travelPerTick = 0;
@@ -493,7 +548,7 @@ function startAttack(s: StalkerState, attack: EnemyAttack): number {
 }
 
 function beginTravel(s: StalkerState, a: EnemyAttack): void {
-  const ticks = a.windupTicks + a.activeTicks - a.travelStartTick;
+  const ticks = a.travelLeadTicks + a.activeTicks;
   if (ticks <= 0) return;
   let distance: number;
   if (a.travel === 'to-target') {

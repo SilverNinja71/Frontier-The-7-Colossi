@@ -43,6 +43,8 @@ export class PlayerCharacter {
   #grounded = false;
   #ticksSinceDamage = Infinity;
   #ticksSinceSpawn = Infinity;
+  /** Set while a colossus hunts: no natural healing mid-fight. */
+  regenBlocked = false;
   #lastStep: MotorStepResult = { velX: 0, velZ: 0, events: 0 };
 
   constructor(
@@ -116,7 +118,7 @@ export class PlayerCharacter {
     const t = this.body.translation();
     this.body.setNextKinematicTranslation({ x: t.x + movement.x, y: t.y + movement.y, z: t.z + movement.z });
 
-    if (++this.#ticksSinceDamage > HP_REGEN_DELAY_TICKS) {
+    if (++this.#ticksSinceDamage > HP_REGEN_DELAY_TICKS && !this.regenBlocked) {
       this.hp = Math.min(this.maxHp, this.hp + this.maxHp * HP_REGEN_PER_TICK);
     }
     return result;

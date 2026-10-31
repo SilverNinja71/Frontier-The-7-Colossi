@@ -26,8 +26,12 @@ const COLLIDER_CENTER = 1.5;
 const IDLE_RESULT: StalkerStepResult = { velX: 0, velZ: 0, events: 0, hit: null };
 const MIST_COUNT = 110;
 const EYE_IDLE = new THREE.Color('#6fd8ff');
-const EYE_PARRY = new THREE.Color('#fff2b0');
+const EYE_ECLIPSE = new THREE.Color('#c23cff');
+const EYE_PARRY = new THREE.Color('#ffc14d');
+/** Flashed in the last ticks before a parryable strike lands: the real timing cue. */
+const EYE_STRIKE = new THREE.Color('#ffffff');
 const EYE_PERIL = new THREE.Color('#ff2a2a');
+const STRIKE_TELL_TICKS = 4;
 
 interface LegRig {
   hip: THREE.Group;
@@ -241,7 +245,8 @@ export class ShadowStalker implements CombatTarget {
     const target_ = neutral();
     let rise = 0;
     let rate = 10;
-    let eye = EYE_IDLE;
+    const idleEye = b.eclipsed ? EYE_ECLIPSE : EYE_IDLE;
+    let eye = idleEye;
     let peril = false;
     this.#gait += dt * (2 + speed * 1.3);
     const stride = Math.min(1.2, speed / 5);
@@ -263,11 +268,13 @@ export class ShadowStalker implements CombatTarget {
         break;
       case StalkerPhase.Attack: {
         const a = b.attack!;
-        const wind = Math.min(1, t / a.windupTicks);
-        const active = clamp01((t - a.windupTicks) / a.activeTicks);
-        const recovery = clamp01((t - a.windupTicks - a.activeTicks) / a.recoveryTicks);
-        const inWindup = t < a.windupTicks;
-        eye = inWindup ? (a.parryable ? EYE_PARRY : EYE_PERIL) : EYE_IDLE;
+        const windup = b.windupTicks;
+        const wind = Math.min(1, t / windup);
+        const active = clamp01((t - windup) / a.activeTicks);
+        const recovery = clamp01((t - windup - a.activeTicks) / a.recoveryTicks);
+        const inWindup = t < windup;
+        // Gold through the (possibly hesitating) windup, white in the last instant before it lands.
+        eye = !inWindup ? idleEye : !a.parryable ? EYE_PERIL : t >= windup - STRIKE_TELL_TICKS ? EYE_STRIKE : EYE_PARRY;
         peril = inWindup && !a.parryable;
         rate = 18;
         if (a.id.startsWith('rending-claw')) {
@@ -290,9 +297,9 @@ export class ShadowStalker implements CombatTarget {
           target_.headPitch = 1.0 * wind * (1 - recovery);
         } else {
           // Shade Pounce: coil, then arc through the air to the marked ground.
-          const travelTicks = a.windupTicks + a.activeTicks - a.travelStartTick;
-          const u = clamp01((t - a.travelStartTick) / travelTicks);
-          target_.spineY = t < a.travelStartTick ? -0.42 * Math.min(1, t / a.travelStartTick) : 0;
+          const travelStart = windup - a.travelLeadTicks;
+          const u = clamp01((t - travelStart) / (a.travelLeadTicks + a.activeTicks));
+          target_.spineY = t < travelStart ? -0.42 * Math.min(1, t / travelStart) : 0;
           rise = u > 0 && u < 1 ? 3.2 * Math.sin(Math.PI * u) : 0;
           if (u > 0 && u < 1) target_.legPitch = [1.2, 1.2, -1.2, -1.2];
           rate = 24;
@@ -348,11 +355,12 @@ export class ShadowStalker implements CombatTarget {
       seg.rotation.x = -0.25 + i * 0.12;
     });
 
-    this.#eyeMaterial.color.lerp(eye, 1 - Math.exp(-dt * 20));
+    this.#eyeMaterial.color.lerp(eye, eye === EYE_STRIKE ? 1 : 1 - Math.exp(-dt * 20));
     const heartGlow = b.phase === StalkerPhase.Exposed ? 3 + Math.sin(t * 0.5) * 0.8 : 0.4;
     this.#heartMaterial.emissiveIntensity += (heartGlow - this.#heartMaterial.emissiveIntensity) * (1 - Math.exp(-dt * 6));
     this.#heartMaterial.emissive.set(b.phase === StalkerPhase.Exposed ? '#ffd27a' : '#b07bff');
-    this.#hideMaterial.emissiveIntensity = 0.3 + this.#flinch * 1.2;
+    this.#hideMaterial.emissiveIntensity = (b.eclipsed ? 0.75 : 0.3) + this.#flinch * 1.2;
+    if (b.eclipsed) this.#mistBoost = Math.max(this.#mistBoost, 0.45);
 
     // Telegraph cues fire once per attack instance.
     if (b.phase === StalkerPhase.Attack && b.attackSerial !== this.#lastSerialShown) {
@@ -389,19 +397,20 @@ export class ShadowStalker implements CombatTarget {
 
   #updateRing(a: NonNullable<StalkerState['attack']>, t: number, target: THREE.Vector3): void {
     const material = this.#ring.material as THREE.MeshBasicMaterial;
-    const inWindup = t < a.windupTicks;
+    const windup = this.brain.windupTicks;
+    const inWindup = t < windup;
     if (a.parryable || !inWindup) {
       this.#ring.visible = false;
       return;
     }
     this.#ring.visible = true;
-    const committed = t >= a.windupTicks - a.commitTicks;
+    const committed = t >= windup - a.commitTicks;
     if (a.origin === 'target') {
       this.#ring.position.set(committed ? this.brain.aimX : target.x, 0.05, committed ? this.brain.aimZ : target.z);
     } else {
       this.#ring.position.set(this.pose.x, 0.05, this.pose.z);
     }
-    const grow = 0.25 + 0.75 * (t / a.windupTicks);
+    const grow = 0.25 + 0.75 * (t / windup);
     this.#ring.scale.setScalar(a.reach * grow);
     material.opacity = 0.35 + 0.4 * Math.abs(Math.sin(performance.now() * 0.018));
   }

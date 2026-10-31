@@ -31,6 +31,8 @@ export interface BossHud {
   maxResolve: number;
   chain: number;
   chainGoal: number;
+  /** Second phase: faster, relentless. */
+  eclipsed: boolean;
   status: 'emerging' | 'hunting' | 'exposed' | 'subdued' | 'fading';
 }
 
@@ -116,7 +118,7 @@ export const useHud = create<HudState>()(() => ({
   },
   target: { name: '', level: 1, hp: 1, maxHp: 1, dps: 0, total: 0, tracking: true, drill: false },
   combo: { count: 0, at: 0 },
-  boss: { visible: false, name: '', title: '', resolve: 1, maxResolve: 1, chain: 0, chainGoal: 3, status: 'hunting' },
+  boss: { visible: false, name: '', title: '', resolve: 1, maxResolve: 1, chain: 0, chainGoal: 3, eclipsed: false, status: 'hunting' },
   clock: { period: 'day', moon: 'full', night: 0 },
   announcement: null,
   marks: [],

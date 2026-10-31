@@ -220,6 +220,8 @@ export type DefenseOutcome = 'dodged' | 'parried' | 'guarded' | 'hit';
 
 export interface IncomingAttack {
   parryable: boolean;
+  /** Perfect window override for this attack, in ticks (capped by the motor's own). */
+  deflectTicks?: number;
   /** Direction from the defender toward the attack's origin; omit to treat it as frontal. */
   fromX?: number;
   fromZ?: number;
@@ -239,7 +241,8 @@ export function resolveIncomingAttack(s: MotorState, tuning: MotorTuning, attack
       if (cosToAttack < Math.cos((tuning.parry.frontalArcDegrees * Math.PI) / 360)) return 'hit';
     }
   }
-  return s.actionTick < tuning.parry.perfectTicks ? 'parried' : 'guarded';
+  const perfect = Math.min(tuning.parry.perfectTicks, attack.deflectTicks ?? tuning.parry.perfectTicks);
+  return s.actionTick < perfect ? 'parried' : 'guarded';
 }
 
 /** Perfect parry: refund stamina and free the character to deflect the next blow or counter. */

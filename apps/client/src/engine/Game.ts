@@ -15,6 +15,7 @@ import {
   SANDBOX_DAY_SECONDS,
   StalkerEvent,
   StalkerPhase,
+  stalkerTargetFell,
   timeOfDayAt,
   yawFromDirection,
   type MotorContext,
@@ -130,6 +131,9 @@ export class Game implements GameCommands {
   #daylight = 1;
   #stalkerNight = Number.NaN;
   #shockSerial = -1;
+  /** Died at least once during the current hunt: surviving to dawn no longer earns the mark. */
+  #fellTonight = false;
+  #wasDead = false;
   #lockTarget: Lockable | null = null;
   #marks: WorldMarkDefinition[];
   readonly #renderPos = new THREE.Vector3();
@@ -361,6 +365,16 @@ export class Game implements GameCommands {
     this.#combat.step();
     this.#combat.resolveEnemyHit(this.#stalker, stalkerResult.hit, SHADOW_STALKER.stats);
 
+    // No natural healing mid-hunt, and every fall feeds it.
+    this.#player.regenBlocked = this.#stalker.present;
+    const dead = this.#player.dead;
+    if (dead && !this.#wasDead && this.#stalker.targetable) {
+      this.#fellTonight = true;
+      const regained = stalkerTargetFell(this.#stalker.brain);
+      if (regained > 0) pushToast(`It feeds on your fall · +${Math.round(regained)} Resolve`, 'danger');
+    }
+    this.#wasDead = dead;
+
     const pose = this.#player.pose();
     const at = { x: pose.x, y: pose.y + 1.2, z: pose.z };
     if (motorResult.events & MotorEvent.AttackStarted) this.#audio.play('swing', at, 0.8 + this.#player.motor.comboStep * 0.15);
@@ -386,6 +400,7 @@ export class Game implements GameCommands {
     const x = Math.sin(angle) * STALKER_EMERGE_DISTANCE;
     const z = Math.cos(angle) * STALKER_EMERGE_DISTANCE;
     this.#stalkerNight = nightIndexAt(this.#worldTime);
+    this.#fellTonight = false;
     this.#onStalkerEvents(this.#stalker.summon(x, z, yawFromDirection(p.x - x, p.z - z)));
   }
 
@@ -400,6 +415,11 @@ export class Game implements GameCommands {
     if (flags & StalkerEvent.TelegraphParryable) this.#audio.play('growl', at, 0.8);
     if (flags & StalkerEvent.TelegraphPerilous) {
       this.#audio.play(stalker.brain.attack?.id === 'moonless-howl' ? 'howl' : 'growl', at, 1.2);
+    }
+    if (flags & StalkerEvent.Eclipsed) {
+      announce('Eclipse', "The Shadow Stalker's eyes burn", 'Half its Resolve is gone. It hunts in earnest now.');
+      this.#audio.play('howl', at, 1.3);
+      this.#camera.addTrauma(0.5);
     }
     if (flags & StalkerEvent.Exposed) {
       pushToast('EXPOSED · STRIKE THE HEART', 'gold');
@@ -418,12 +438,16 @@ export class Game implements GameCommands {
       this.#setLock(null);
     }
     if (flags & StalkerEvent.Survived) {
-      const fresh = this.#grantMark();
-      announce(
-        'Dawn breaks',
-        'You survived the Shadow Stalker',
-        fresh ? `Mark acquired: ${MARK_OF_THE_NIGHT_LYCAON.name}` : 'It fades with the night… for now.',
-      );
+      if (this.#fellTonight) {
+        announce('Dawn breaks', 'The Shadow Stalker fades', 'You fell tonight. Survive a whole new-moon night unbroken to earn its mark.');
+      } else {
+        const fresh = this.#grantMark();
+        announce(
+          'Dawn breaks',
+          'You survived the Shadow Stalker',
+          fresh ? `Mark acquired: ${MARK_OF_THE_NIGHT_LYCAON.name}` : 'It fades with the night… for now.',
+        );
+      }
       this.#audio.play('gong');
     }
   }
@@ -696,6 +720,7 @@ export class Game implements GameCommands {
         resolve: brain.resolve,
         maxResolve: SHADOW_STALKER.stats.maxHp,
         chain: brain.parryChain,
+        eclipsed: brain.eclipsed,
         chainGoal: SHADOW_STALKER.defeatCondition.kind === 'parry-chain' ? SHADOW_STALKER.defeatCondition.requiredChain : 3,
         status: BOSS_STATUS[brain.phase] ?? 'hunting',
       },

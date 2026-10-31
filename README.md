@@ -118,18 +118,42 @@ A full day lasts 8 minutes; the sandbox starts in late afternoon, about a minute
 new-moon night (or press **N**). At nightfall the Stalker rises across the arena and a world
 announcement fires.
 
+It is meant to be **brutal**. Expect to lose many nights before you subdue it.
+
 - **Blades cannot wound it.** Every strike shows *IMMUNE* until it is Exposed.
-- **Parry to break it.** A gold glint and white eyes mean *parry this*. Each perfect parry
-  drains its Resolve, and three in a row (watch the ◆◆◆ chain) collapse it Exposed for 3.5 s.
-  Strike the glowing heart under its chest then.
+- **Parry to break it.** A gold glint and gold eyes mean *this one can be parried*. Its eyes
+  flash **white** in the instant before the blow lands: that is your timing cue, because its
+  windups hesitate by a random few frames. The deflect window is 167 ms against claws and
+  133 ms against the lunge. Each perfect parry drains its Resolve, and **five in a row**
+  (watch the ◆◆◆◆◆ chain) collapse it Exposed for 2.5 s. Only the heart under its chest
+  takes real damage; the body takes a quarter.
 - **Red 危 means get out.** Moonless Howl (ring around it) and Shade Pounce (ring under you) can't
   be parried: dodge through with i-frames or outrun the ring.
-- Its moves: *Rending Claws* (3-hit combo, the best parry-chain opening), *Shadow Lunge*
-  (gap-closer, parry knocks it back), *Moonless Howl*, *Shade Pounce*.
-- **Win or survive until dawn** to earn the permanent **Mark of the Night Lycaon**: violet brands
-  on your character, chest armor forbidden, +20% agility and +20% crit at night. It is saved in
-  this browser for the sandbox (server-side in Phase 2). The win also calls CrazyGames
-  `happytime()`.
+- Its moves: *Rending Claws* (3-hit combo), *Shadow Lunge* (gap-closer, a parry knocks it
+  back), *Moonless Howl*, *Shade Pounce*. Claws hit for ~195, the lunge ~300, the howl ~390
+  against 1,000 HP: three mistakes and you are down.
+- **Eclipse** below half Resolve: faster windups, faster chases, shorter pauses, and an
+  unparried lunge flows straight into the claw combo.
+- **No mercy:** no health regeneration while it hunts, late parries only halve damage, and each
+  time it kills you it regains 35% of its Resolve.
+- **Subdue it, or survive the whole night without dying once**, to earn the permanent
+  **Mark of the Night Lycaon**: violet brands on your character, chest armor forbidden, +20%
+  agility and +20% crit at night. It is saved in this browser for the sandbox (server-side in
+  Phase 2). A win also calls CrazyGames `happytime()`.
+
+Simulated nights against bots that read a given share of strikes correctly (a parry for
+parryable blows, a dodge for perilous ones) and punish each exposure like a strong player:
+
+| Strikes read correctly | Subdued within the night | Survived the night deathless |
+| ---------------------- | ------------------------ | ---------------------------- |
+| 100%                   | 99% (≈115 s)             | 100%                         |
+| 95%                    | 89% (≈130 s)             | 75%                          |
+| 90%                    | 55% (≈145 s)             | 31%                          |
+| 85%                    | 15%                      | 6%                           |
+| 80%                    | 0%                       | 0%                           |
+
+The two ends of this curve are locked in as tests, so tuning changes cannot quietly make it
+easy or impossible.
 
 ## CrazyGames SDK wrapper
 
@@ -164,11 +188,12 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Verification
 
-- `npm run check`: typecheck, 42 unit tests (motor, dodge distance/i-frames, combo/cancel,
+- `npm run check`: typecheck, 47 unit tests (motor, dodge distance/i-frames, combo/cancel,
   parry windows/frontal arc/guard break, lock-on strafing, stamina exhaustion, hit registration
   incl. directional weak points, damage, marks, skill evolution, world clock and moon phases,
   simulated Shadow Stalker fights (a perfect-parry bot subdues it, a passive one never exposes
-  it, dawn dissolves it, seeds are deterministic), SDK wrapper lifecycle/policy/errors/
+  it, dawn dissolves it, seeds are deterministic), its difficulty envelope, hesitating
+  windups, per-attack deflect windows, Eclipse and feeding, SDK wrapper lifecycle/policy/errors/
   throttling/timeouts), and the production build.
 - The production build was driven in headless Chromium: combo hits and the DPS meter, a
   precision core crit from behind, the slam drill (150 damage + stagger) and a perfect dodge
