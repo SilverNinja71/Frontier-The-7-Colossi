@@ -35,6 +35,16 @@
   }
 }
 
+@keyframes fx-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 html,
 body {
   height: 100%;
@@ -62,4 +72,383 @@ body {
 #hud-root {
   z-index: 20;
   pointer-events: none;
+}
+
+/* --- Game UI kit --------------------------------------------------------------
+ * Buttons are chamfered plates with a metal trim (the outer element) and a fill
+ * (::before), plus a light sweep on hover (::after). Variants only swap tokens.
+ */
+@layer components {
+  .fx-btn {
+    --fx-trim: linear-gradient(180deg, #f8e2a0 0%, #a87a2b 48%, #6e4a14 52%, #e9c66f 100%);
+    --fx-fill: linear-gradient(180deg, #2c2419 0%, #16110b 100%);
+    --fx-text: #f7e7bf;
+    --fx-cut: 11px;
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    padding: 0.78em 1.9em;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--fx-text);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.75);
+    background: var(--fx-trim);
+    clip-path: polygon(
+      var(--fx-cut) 0,
+      calc(100% - var(--fx-cut)) 0,
+      100% 50%,
+      calc(100% - var(--fx-cut)) 100%,
+      var(--fx-cut) 100%,
+      0 50%
+    );
+    cursor: pointer;
+    transition:
+      transform 120ms ease,
+      filter 160ms ease;
+  }
+  .fx-btn::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    z-index: -2;
+    background: var(--fx-fill);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+    clip-path: polygon(
+      calc(var(--fx-cut) - 1px) 0,
+      calc(100% - var(--fx-cut) + 1px) 0,
+      100% 50%,
+      calc(100% - var(--fx-cut) + 1px) 100%,
+      calc(var(--fx-cut) - 1px) 100%,
+      0 50%
+    );
+  }
+  .fx-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 30%, rgb(255 244 214 / 0.32) 48%, transparent 66%);
+    transform: translateX(-130%);
+    transition: transform 650ms ease;
+  }
+  .fx-btn:hover {
+    filter: brightness(1.14) saturate(1.05);
+  }
+  .fx-btn:hover::after {
+    transform: translateX(130%);
+  }
+  .fx-btn:active {
+    transform: translateY(1px) scale(0.975);
+    filter: brightness(0.95);
+  }
+  .fx-btn:focus-visible {
+    outline: none;
+    filter: brightness(1.25);
+  }
+  .fx-btn:disabled {
+    cursor: not-allowed;
+    filter: grayscale(0.85) brightness(0.6);
+  }
+  .fx-btn:disabled::after {
+    display: none;
+  }
+  .fx-btn svg {
+    flex: none;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.6));
+  }
+
+  .fx-btn--primary {
+    --fx-trim: linear-gradient(180deg, #fff3cc 0%, #c9952f 50%, #7a4d0e 100%);
+    --fx-fill: linear-gradient(180deg, #f6cf6a 0%, #dda33a 45%, #b0731c 100%);
+    --fx-text: #2b1705;
+    text-shadow: 0 1px 0 rgb(255 240 196 / 0.55);
+  }
+  .fx-btn--primary svg {
+    filter: none;
+  }
+  .fx-btn--arcane {
+    --fx-trim: linear-gradient(180deg, #e4d4ff 0%, #7d55d6 50%, #3b2275 100%);
+    --fx-fill: linear-gradient(180deg, #3d2475 0%, #1c1038 100%);
+    --fx-text: #eee4ff;
+  }
+  .fx-btn--ghost {
+    --fx-trim: linear-gradient(180deg, rgb(255 255 255 / 0.38), rgb(255 255 255 / 0.1));
+    --fx-fill: linear-gradient(180deg, rgb(32 36 48 / 0.95), rgb(14 16 23 / 0.95));
+    --fx-text: rgb(255 255 255 / 0.78);
+  }
+  .fx-btn--sm {
+    --fx-cut: 9px;
+    padding: 0.62em 1.3em;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+  }
+  .fx-btn--lg {
+    --fx-cut: 14px;
+    padding: 0.95em 2.6em;
+    font-size: 15px;
+    letter-spacing: 0.24em;
+  }
+  .fx-btn--block {
+    display: flex;
+    width: 100%;
+  }
+
+  /* Panels: dark glass with gilt corner brackets. */
+  .fx-panel {
+    position: relative;
+    background:
+      radial-gradient(120% 70% at 50% 0%, rgb(253 230 138 / 0.07), transparent 60%),
+      linear-gradient(180deg, rgb(22 24 34 / 0.94), rgb(9 10 16 / 0.96));
+    border: 1px solid rgb(253 230 138 / 0.24);
+    border-radius: 12px;
+    box-shadow:
+      0 24px 70px rgb(0 0 0 / 0.65),
+      inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+  .fx-panel::before {
+    --c: #e3be65;
+    content: '';
+    position: absolute;
+    inset: 6px;
+    pointer-events: none;
+    border-radius: 8px;
+    background:
+      linear-gradient(var(--c), var(--c)) top left / 16px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) top left / 2px 16px no-repeat,
+      linear-gradient(var(--c), var(--c)) top right / 16px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) top right / 2px 16px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom left / 16px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom left / 2px 16px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom right / 16px 2px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom right / 2px 16px no-repeat;
+    opacity: 0.85;
+  }
+  .fx-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(253 230 138 / 0.55), transparent);
+  }
+
+  /* Toggle rows with a sliding switch. */
+  .fx-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 7px;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.02));
+    color: rgb(255 255 255 / 0.78);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 150ms ease,
+      background 150ms ease,
+      color 150ms ease;
+  }
+  .fx-toggle:hover {
+    border-color: rgb(253 230 138 / 0.4);
+  }
+  .fx-toggle[aria-pressed='true'] {
+    border-color: rgb(253 230 138 / 0.55);
+    background: linear-gradient(180deg, rgb(251 191 36 / 0.18), rgb(251 191 36 / 0.05));
+    color: #fef3c7;
+  }
+  .fx-switch {
+    position: relative;
+    flex: none;
+    width: 30px;
+    height: 16px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.55);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+    transition: background 150ms ease;
+  }
+  .fx-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #8f98a8;
+    transition:
+      transform 180ms cubic-bezier(0.3, 1.5, 0.5, 1),
+      background 150ms ease,
+      box-shadow 150ms ease;
+  }
+  [aria-pressed='true'] > .fx-switch {
+    background: rgb(251 191 36 / 0.35);
+    box-shadow: inset 0 0 0 1px rgb(253 230 138 / 0.75);
+  }
+  [aria-pressed='true'] > .fx-switch::after {
+    transform: translateX(14px);
+    background: #fde68a;
+    box-shadow: 0 0 8px rgb(253 230 138 / 0.9);
+  }
+
+  /* Keyboard key caps. */
+  .fx-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.7em;
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    border: 1px solid rgb(255 255 255 / 0.28);
+    border-bottom-width: 2px;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #fde68a;
+    white-space: nowrap;
+  }
+
+  /* Action bar slots. */
+  .fx-slot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 58px;
+    height: 58px;
+    border-radius: 9px;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    background:
+      radial-gradient(90% 70% at 50% 15%, rgb(255 255 255 / 0.09), transparent 70%),
+      linear-gradient(180deg, rgb(26 29 40 / 0.88), rgb(9 10 15 / 0.92));
+    box-shadow:
+      0 6px 16px rgb(0 0 0 / 0.45),
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      inset 0 -2px 0 rgb(0 0 0 / 0.4);
+    color: rgb(255 255 255 / 0.82);
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease,
+      transform 120ms ease,
+      opacity 120ms ease;
+  }
+  .fx-slot .fx-key {
+    position: absolute;
+    top: -7px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    background: linear-gradient(180deg, #2a2d38, #15171e);
+  }
+  .fx-slot__name {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .fx-slot[data-state='active'] {
+    border-color: rgb(253 211 77 / 0.9);
+    color: #fef3c7;
+    transform: translateY(-2px);
+    box-shadow:
+      0 0 0 1px rgb(253 211 77 / 0.4),
+      0 0 18px rgb(251 191 36 / 0.45),
+      inset 0 1px 0 rgb(255 255 255 / 0.12);
+  }
+  .fx-slot[data-state='highlight'] {
+    border-color: rgb(125 211 252);
+    color: #e0f2fe;
+    box-shadow:
+      0 0 0 1px rgb(125 211 252 / 0.45),
+      0 0 20px rgb(56 189 248 / 0.6);
+  }
+  .fx-slot[data-disabled='true'] {
+    opacity: 0.4;
+  }
+  .fx-slot--primary {
+    width: 70px;
+    height: 70px;
+    border-color: rgb(253 230 138 / 0.4);
+  }
+
+  /* Touch buttons: glossy discs. */
+  .fx-touch {
+    --tone: rgb(244 63 94 / 0.55);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    border-radius: 999px;
+    border: 2px solid rgb(255 255 255 / 0.55);
+    background:
+      radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.4), transparent 46%),
+      radial-gradient(circle at 50% 60%, var(--tone), rgb(0 0 0 / 0.45) 120%);
+    box-shadow:
+      0 6px 18px rgb(0 0 0 / 0.45),
+      inset 0 -4px 10px rgb(0 0 0 / 0.35);
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.7);
+    backdrop-filter: blur(3px);
+    transition:
+      transform 90ms ease,
+      filter 90ms ease;
+  }
+  .fx-touch:active,
+  .fx-touch[data-on='true'] {
+    transform: scale(0.92);
+    filter: brightness(1.25);
+  }
+  .fx-touch[data-on='true'] {
+    box-shadow:
+      0 0 0 4px rgb(255 255 255 / 0.35),
+      0 6px 18px rgb(0 0 0 / 0.45);
+  }
+  .fx-touch--strike {
+    --tone: rgb(225 29 72 / 0.7);
+  }
+  .fx-touch--dodge {
+    --tone: rgb(14 165 233 / 0.65);
+  }
+  .fx-touch--parry {
+    --tone: rgb(245 158 11 / 0.7);
+  }
+  .fx-touch--lock {
+    --tone: rgb(139 92 246 / 0.65);
+  }
+  .fx-touch--sprint {
+    --tone: rgb(16 185 129 / 0.6);
+  }
+  .fx-touch--utility {
+    --tone: rgb(30 41 59 / 0.75);
+  }
+
+  /* Minimap. */
+  .fx-minimap {
+    position: relative;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 2px solid rgb(227 190 101 / 0.85);
+    background: #1a2230;
+    box-shadow:
+      0 0 0 4px rgb(10 12 18 / 0.75),
+      0 0 0 5px rgb(227 190 101 / 0.35),
+      0 10px 28px rgb(0 0 0 / 0.55),
+      inset 0 0 26px rgb(0 0 0 / 0.55);
+  }
 }

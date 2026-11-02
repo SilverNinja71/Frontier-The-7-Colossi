@@ -23,9 +23,25 @@ export interface GameCommands {
   summonNewMoon(): void;
   clearMarks(): void;
   toggleStrikeDrill(): void;
+  swapWeapon(): void;
   closeReport(): void;
   /** Sandbox escape hatch: jump to dawn, ending the hunt without earning the mark. */
   fleeToDawn(): void;
+  openMap(): void;
+  closeMap(): void;
+}
+
+export interface ExploreHud {
+  /** Object URL of the painted world map (north up). */
+  mapUrl: string | null;
+  /** Player feet position, facing (radians, 0 = north/-z) and camera yaw. */
+  x: number;
+  z: number;
+  facing: number;
+  cameraYaw: number;
+  discovered: string[];
+  /** Shown by the minimap: what is nearby. */
+  region: string;
 }
 
 export interface HuntReport {
@@ -115,6 +131,10 @@ export interface HudState {
   announcement: Announcement | null;
   marks: MarkHud[];
   lockOn: boolean;
+  explore: ExploreHud;
+  mapOpen: boolean;
+  /** Equipped weapon and its combo, in order. */
+  weapon: { name: string; moves: string[] };
   /** Shown while dead; `fed` = Resolve the Stalker regained from the fall. */
   fallen: { fed: number } | null;
   report: HuntReport | null;
@@ -166,6 +186,9 @@ export const useHud = create<HudState>()(() => ({
   announcement: null,
   marks: [],
   lockOn: false,
+  weapon: { name: '', moves: [] },
+  explore: { mapUrl: null, x: 0, z: 0, facing: 0, cameraYaw: 0, discovered: [], region: '' },
+  mapOpen: false,
   fallen: null,
   report: null,
   records: EMPTY_RECORDS,

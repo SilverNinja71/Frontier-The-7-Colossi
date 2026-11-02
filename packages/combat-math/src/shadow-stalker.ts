@@ -259,6 +259,8 @@ export interface StalkerState {
   phase: StalkerPhaseId;
   phaseTick: number;
   x: number;
+  /** Feet height (terrain), kept by the host's physics. */
+  y: number;
   z: number;
   yaw: number;
   attack: EnemyAttack | null;
@@ -268,6 +270,7 @@ export interface StalkerState {
   attackSerial: number;
   /** Target snapshot at commit: pounce landing point / lunge heading. */
   aimX: number;
+  aimY: number;
   aimZ: number;
   travelPerTick: number;
   travelDirX: number;
@@ -312,12 +315,14 @@ export function createStalkerState(): StalkerState {
     phase: StalkerPhase.Dormant,
     phaseTick: 0,
     x: 0,
+    y: 0,
     z: 0,
     yaw: 0,
     attack: null,
     windupTicks: 0,
     attackSerial: 0,
     aimX: 0,
+    aimY: 0,
     aimZ: 0,
     travelPerTick: 0,
     travelDirX: 0,
@@ -334,8 +339,8 @@ export function createStalkerState(): StalkerState {
   };
 }
 
-export function summonStalker(s: StalkerState, x: number, z: number, yaw: number): number {
-  Object.assign(s, createStalkerState(), { x, z, yaw, attackSerial: s.attackSerial });
+export function summonStalker(s: StalkerState, x: number, z: number, yaw: number, y = 0): number {
+  Object.assign(s, createStalkerState(), { x, y, z, yaw, attackSerial: s.attackSerial });
   setPhase(s, StalkerPhase.Emerging);
   return StalkerEvent.Emerged;
 }
@@ -429,6 +434,7 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
         s.yaw = turnToward(s.yaw, a.rear ? toTargetYaw + Math.PI : toTargetYaw, maxTurn * 1.5);
       } else if (t === commitTick) {
         s.aimX = ctx.target.x;
+        s.aimY = ctx.target.y;
         s.aimZ = ctx.target.z;
       }
       if (t === travelStart) beginTravel(s, a);
@@ -439,8 +445,8 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
       if (t >= windup && t < windup + a.activeTicks) {
         const pose =
           a.origin === 'target'
-            ? { x: s.aimX, y: 0, z: s.aimZ, yaw: s.yaw }
-            : { x: s.x + velX * ctx.dt, y: 0, z: s.z + velZ * ctx.dt, yaw: a.rear ? s.yaw + Math.PI : s.yaw };
+            ? { x: s.aimX, y: s.aimY, z: s.aimZ, yaw: s.yaw }
+            : { x: s.x + velX * ctx.dt, y: s.y, z: s.z + velZ * ctx.dt, yaw: a.rear ? s.yaw + Math.PI : s.yaw };
         hit = { attack: a, serial: s.attackSerial, pose };
       }
       if (t >= windup + a.activeTicks + a.recoveryTicks) {

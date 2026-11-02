@@ -374,3 +374,19 @@ describe('Shadow Stalker awareness', () => {
     expect(s.wariness).toBe(0);
   });
 });
+
+describe('stalker on uneven ground', () => {
+  it('strikes from its own height, and lands pounces at the height it aimed for', () => {
+    const rng = new DeterministicRng(9);
+    const s = createStalkerState();
+    summonStalker(s, 0, 0, 0, 6);
+    const target = { x: 0, y: 6.4, z: -2, yaw: 0 };
+    const heights = new Set<number>();
+    for (let tick = 0; tick < 30 * 40 && heights.size < 2; tick++) {
+      const result = stepStalker(s, { target, targetAlive: true, isNight: true, rng, dt: SIM_DT });
+      if (result.hit) heights.add(result.hit.attack.origin === 'target' ? result.hit.pose.y - 0.4 : result.hit.pose.y);
+    }
+    expect(heights.size).toBeGreaterThan(0);
+    for (const y of heights) expect(y).toBeCloseTo(6, 5);
+  });
+});

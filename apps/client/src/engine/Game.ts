@@ -8,6 +8,7 @@ import {
   DeterministicRng,
   DUAL_BLADES_MOVESET,
   equipmentModifiers,
+  MOVESETS,
   moonPhaseAt,
   MotorEvent,
   nextNewMoonNight,
@@ -23,6 +24,7 @@ import {
   yawFromDirection,
   type DefenseOutcome,
   type MotorContext,
+  type Moveset,
 } from '@frontier/combat-math';
 import {
   CharacterAction,
@@ -31,6 +33,7 @@ import {
   type GroundPose,
   type TimeOfDay,
   type WorldConditions,
+  type WeaponDefinition,
   type WorldMarkDefinition,
 } from '@frontier/shared-types';
 import * as THREE from 'three';
@@ -41,18 +44,41 @@ import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { HitSparks } from '../combat/HitSparks.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
-import { loadMarks, loadRecords, saveMarks, saveRecords, type HuntRecords } from '../data/progress.ts';
+import {
+  loadDiscovered,
+  loadMarks,
+  loadRecords,
+  loadWeaponId,
+  saveDiscovered,
+  saveMarks,
+  saveRecords,
+  saveWeaponId,
+  type HuntRecords,
+} from '../data/progress.ts';
 import {
   CRITICAL_STRIKE,
   FIRSTIA_TWIN_FANGS,
   MARK_OF_THE_NIGHT_LYCAON,
   PLAYER_BASE_STATS,
+  SANDBOX_WEAPONS,
   SANDBOX_WORLD,
   SHADOW_STALKER,
   TRAINING_DUMMY,
 } from '../data/sandbox.ts';
 import type { PlatformService } from '../platform/index.ts';
 import { announce, pushToast, useHud, type BossHud, type GameCommands, type HuntReport } from '../ui/store.ts';
+import {
+  ARENA_RADIUS,
+  biomeAt,
+  HeightGrid,
+  inLake,
+  LANDMARKS,
+  nearestLandmark,
+  WATER_LEVEL,
+  type Biome,
+  type Landmark,
+} from '../world/geography.ts';
+import { renderMapPixels } from '../world/map-image.ts';
 import { ArenaTerrain } from './ArenaTerrain.ts';
 import { CameraRig } from './CameraRig.ts';
 import { GameEvents } from './events.ts';
@@ -64,7 +90,11 @@ import { PhysicsWorld, loadRapier, type Rapier } from './PhysicsWorld.ts';
 import { PlayerCharacter } from './PlayerCharacter.ts';
 import { PlayerRig } from './PlayerRig.ts';
 import { SceneManager } from './SceneManager.ts';
+import { Landmarks } from './Landmarks.ts';
+import { Terrain } from './Terrain.ts';
 import { isTouchDevice, TouchControls } from './TouchControls.ts';
+import { Water } from './Water.ts';
+import { WorldScatter } from './WorldScatter.ts';
 
 const ACTION_NAMES = ['free', 'dodge', 'attack', 'stagger', 'dead', 'parry'] as const;
 const HUD_SYNC_INTERVAL = 1 / 15;
@@ -79,6 +109,10 @@ const LOCK_BREAK_RANGE = 32;
 const STALKER_EMERGE_DISTANCE = 16;
 const STALKER_PHASE_NAMES = ['dormant', 'emerging', 'prowl', 'attack', 'recoil', 'exposed', 'dissolving', 'subdued'] as const;
 const KNOWN_MARKS: Record<string, WorldMarkDefinition> = { [MARK_OF_THE_NIGHT_LYCAON.id]: MARK_OF_THE_NIGHT_LYCAON };
+const DISCOVERY_INTERVAL_TICKS = 6;
+/** Slower through Mirror Lake's shallows. */
+const WADING_SPEED = 0.62;
+const MAP_PIXELS = 384;
 
 /** Running tally for the current Shadow Stalker hunt. */
 interface HuntTally {
@@ -115,15 +149,20 @@ const BOSS_STATUS: Partial<Record<number, BossHud['status']>> = {
   [StalkerPhase.Dissolving]: 'fading',
 };
 
-/** The Firstia training grounds: dummy by day, the Shadow Stalker on new-moon nights. */
+/** The First Bastion training grounds: dummy by day, the Shadow Stalker on new-moon nights. */
 export class Game implements GameCommands {
   readonly events = new GameEvents();
   readonly #scene: SceneManager;
   readonly #physics: PhysicsWorld;
   readonly #arena: ArenaTerrain;
+  readonly #terrain: Terrain;
+  readonly #scatter: WorldScatter;
+  readonly #landmarks: Landmarks;
+  readonly #water: Water;
   readonly #player: PlayerCharacter;
   readonly #rig: PlayerRig;
-  readonly #trails: BladeTrail[];
+  readonly #bladeTrails: BladeTrail[];
+  readonly #staffTrails: BladeTrail[];
   readonly #dummy: TrainingDummy;
   readonly #stalker: ShadowStalker;
   readonly #camera: CameraRig;
@@ -137,7 +176,7 @@ export class Game implements GameCommands {
   readonly #loop: FixedStepLoop;
   readonly #motorContext: MotorContext;
   readonly #abort = new AbortController();
-  readonly #baseModifiers = equipmentModifiers([FIRSTIA_TWIN_FANGS]);
+  #weapon: WeaponDefinition = SANDBOX_WEAPONS.find((w) => w.id === loadWeaponId()) ?? FIRSTIA_TWIN_FANGS;
   readonly #stalkerRng = new DeterministicRng(0x5ad0);
 
   #phase: 'title' | 'playing' | 'paused' = 'title';
@@ -163,6 +202,12 @@ export class Game implements GameCommands {
   #fledTonight = false;
   #lockTarget: Lockable | null = null;
   #marks: WorldMarkDefinition[];
+  #discovered = new Set<string>(['firstia', ...loadDiscovered()]);
+  #mapOpen = false;
+  #wading = false;
+  #rippleTimer = 0;
+  #mapUrl: string | null = null;
+  readonly #biome: Biome = { forest: 0, gloam: 0, highland: 0, amber: 0, mesa: 0 };
   readonly #renderPos = new THREE.Vector3();
   readonly #lockPoint = new THREE.Vector3();
   readonly #tmp = new THREE.Vector3();
@@ -175,9 +220,12 @@ export class Game implements GameCommands {
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
     const [rapier, kit] = await Promise.all([loadRapier(), NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`)]);
+    onProgress('Shaping the Bramble Wilds…');
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid);
   }
 
   private constructor(
@@ -186,19 +234,26 @@ export class Game implements GameCommands {
     private readonly platform: PlatformService,
     rapier: Rapier,
     private readonly kit: NatureKit | null,
+    private readonly grid: HeightGrid,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
     this.#physics = new PhysicsWorld(rapier, SIM_DT);
-    this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit, lowPower: touch });
+    this.#terrain = new Terrain(grid, this.#physics, this.#scene.renderer, touch);
+    this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit });
+    this.#scatter = new WorldScatter(grid, this.#physics, kit, touch);
+    this.#landmarks = new Landmarks(grid, this.#physics, kit);
+    this.#water = new Water(this.#scene.scene, grid);
+    this.#scene.scene.add(this.#terrain.group, this.#scatter.group, this.#landmarks.group);
+    for (const id of this.#discovered) this.#landmarks.setAttuned(id, true);
 
     this.#motorContext = {
-      moveset: DUAL_BLADES_MOVESET,
+      moveset: movesetFor(this.#weapon),
       tuning: DEFAULT_MOTOR_TUNING,
       speedMultiplier: 1,
       dt: SIM_DT,
     };
-    const baseStats = resolveStats(PLAYER_BASE_STATS, this.#baseModifiers, SANDBOX_WORLD);
+    const baseStats = resolveStats(PLAYER_BASE_STATS, equipmentModifiers([this.#weapon]), SANDBOX_WORLD);
     this.#player = new PlayerCharacter(
       this.#physics,
       PLAYER_SPAWN,
@@ -211,8 +266,11 @@ export class Game implements GameCommands {
     this.#recomputeStats();
 
     this.#rig = new PlayerRig();
-    this.#trails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
-    this.#scene.scene.add(this.#rig.root, this.#sparks.points, ...this.#trails.map((t) => t.mesh));
+    this.#rig.setWeapon(this.#weapon.weaponClass === 'staff' ? 'staff' : 'blades');
+    this.#bladeTrails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
+    this.#staffTrails = this.#rig.staffAnchors.map((a) => new BladeTrail(a.base, a.tip, '#ffd77a'));
+    const trailMeshes = [...this.#bladeTrails, ...this.#staffTrails].map((t) => t.mesh);
+    this.#scene.scene.add(this.#rig.root, this.#sparks.points, ...trailMeshes);
 
     this.#dummy = new TrainingDummy(this.#scene.scene, this.#physics, TRAINING_DUMMY, new THREE.Vector3(0, 0, 0));
     this.#stalker = new ShadowStalker(this.#scene.scene, this.#physics, overlayRoot);
@@ -221,12 +279,17 @@ export class Game implements GameCommands {
     this.#camera = new CameraRig(this.#scene.camera, this.#physics, [this.#player.collider, this.#stalker.collider]);
     this.#input = new InputController(this.#scene.renderer.domElement);
     this.#touch = touch
-      ? new TouchControls(overlayRoot, this.#input, { onPause: () => this.pause(), onLock: () => this.toggleLock() })
+      ? new TouchControls(overlayRoot, this.#input, {
+          onPause: () => this.pause(),
+          onLock: () => this.toggleLock(),
+          onSwap: () => this.swapWeapon(),
+          onMap: () => this.openMap(),
+        })
       : null;
     if (this.#touch) this.#touch.visible = false;
     this.#combat = new CombatSystem(
       this.#player,
-      DUAL_BLADES_MOVESET,
+      this.#motorContext.moveset,
       DEFAULT_MOTOR_TUNING,
       [this.#dummy, this.#stalker],
       this.events,
@@ -251,6 +314,7 @@ export class Game implements GameCommands {
     });
     this.#syncHud();
     this.#loop.start();
+    setTimeout(() => this.#paintMap(), 0);
   }
 
   // --- Commands (HUD / platform) ---------------------------------------------
@@ -294,6 +358,27 @@ export class Game implements GameCommands {
     this.#syncHud();
   }
 
+  /** Swap between the Twin Fangs and the Ruyi staff (only while not mid-move). */
+  swapWeapon(): void {
+    if (this.#player.motor.action !== CharacterAction.Free) {
+      pushToast('Finish your move first', 'info');
+      return;
+    }
+    const index = SANDBOX_WEAPONS.indexOf(this.#weapon);
+    this.#equip(SANDBOX_WEAPONS[(index + 1) % SANDBOX_WEAPONS.length]!);
+    pushToast(`${this.#weapon.name} · ${this.#motorContext.moveset.steps.length}-strike combo`, 'gold');
+  }
+
+  #equip(weapon: WeaponDefinition): void {
+    this.#weapon = weapon;
+    const moveset = movesetFor(weapon);
+    this.#motorContext.moveset = moveset;
+    this.#combat.moveset = moveset;
+    this.#rig.setWeapon(weapon.weaponClass === 'staff' ? 'staff' : 'blades');
+    saveWeaponId(weapon.id);
+    this.#recomputeStats();
+  }
+
   toggleStrikeDrill(): void {
     this.#dummy.strikeDrill = !this.#dummy.strikeDrill;
     pushToast(
@@ -308,6 +393,50 @@ export class Game implements GameCommands {
     this.#fledTonight = true;
     this.#worldTime = nightIndexAt(this.#worldTime) + DAY_PERIODS.dawn + 0.001;
     pushToast('You flee until dawn…', 'info');
+  }
+
+  openMap(): void {
+    if (this.#phase === 'paused') {
+      // From the pause menu: the map replaces it.
+      this.#phase = 'playing';
+      this.platform.setAdContext('overworld');
+      useHud.setState({ phase: 'playing' });
+    }
+    if (this.#phase !== 'playing' || this.#mapOpen || this.#reportOpen) return;
+    this.#mapOpen = true;
+    this.#input.exitPointerLock();
+    this.platform.gameplayStop();
+    this.#applyRunState();
+    this.#syncHud();
+    useHud.setState({ mapOpen: true });
+  }
+
+  closeMap(): void {
+    if (!this.#mapOpen) return;
+    this.#mapOpen = false;
+    useHud.setState({ mapOpen: false });
+    if (this.#phase === 'playing') {
+      if (!this.#touch) this.#input.requestPointerLock();
+      this.platform.gameplayStart();
+    }
+    this.#applyRunState();
+  }
+
+  /**
+   * Dev-only (window.__game in `npm run dev`): jump to a landmark's waystone for testing.
+   * The world itself has no fast travel; it is walked.
+   */
+  debugTeleport(landmarkId: string): void {
+    if (this.#player.dead) return;
+    const point = this.#landmarks.spawnPoint(landmarkId);
+    const landmark = LANDMARKS.find((l) => l.id === landmarkId);
+    if (!point || !landmark) return;
+    // Arrive facing away from the waystone, towards the landmark proper.
+    const yaw = landmarkId === 'firstia' ? 0 : yawFromDirection(landmark.x - point.x, landmark.z - point.z - 0.001);
+    this.#player.teleport(point, yaw);
+    this.#camera.resetBehind(yaw);
+    this.#setLock(null);
+    this.closeMap();
   }
 
   closeReport(): void {
@@ -407,6 +536,9 @@ export class Game implements GameCommands {
     this.#validateLock();
 
     const input = this.#input.sampleFrame(this.#camera.yaw, this.#lockTarget ? InputButton.LockOn : 0);
+    const feet = this.#player.pose();
+    this.#wading = feet.y < WATER_LEVEL - 0.2 && inLake(feet.x, feet.z);
+    this.#motorContext.speedMultiplier = this.#player.stats.moveSpeed * (this.#wading ? WADING_SPEED : 1);
     const motorResult = this.#player.step(input);
     const dummyResult = this.#dummy.step(this.#player.pose());
     const stalkerResult = this.#stalker.step({
@@ -428,7 +560,13 @@ export class Game implements GameCommands {
     // No natural healing mid-hunt, and every fall feeds it.
     this.#player.regenBlocked = this.#stalker.present;
     const dead = this.#player.dead;
+    if (this.#loop.tick % DISCOVERY_INTERVAL_TICKS === 0 && !dead) this.#checkDiscovery();
     if (dead && !this.#wasDead) {
+      // Rise again at the nearest attuned waystone.
+      const p = this.#player.pose();
+      const home = nearestLandmark(p.x, p.z, (l) => this.#discovered.has(l.id));
+      const spawn = home ? this.#landmarks.spawnPoint(home.id) : null;
+      if (spawn) this.#player.spawn = spawn;
       let fed = 0;
       if (this.#stalker.targetable) {
         this.#fellTonight = true;
@@ -447,7 +585,9 @@ export class Game implements GameCommands {
 
     const pose = this.#player.pose();
     const at = { x: pose.x, y: pose.y + 1.2, z: pose.z };
-    if (motorResult.events & MotorEvent.AttackStarted) this.#audio.play('swing', at, 0.8 + this.#player.motor.comboStep * 0.15);
+    if (motorResult.events & MotorEvent.AttackStarted) {
+      this.#audio.play(this.#rig.weapon === 'staff' ? 'staff' : 'swing', at, 0.8 + this.#player.motor.comboStep * 0.15);
+    }
     if (motorResult.events & MotorEvent.DodgeStarted) this.#audio.play('dodge', at);
     if (motorResult.events & MotorEvent.ParryStarted) {
       this.#audio.play('whiff', at);
@@ -461,18 +601,27 @@ export class Game implements GameCommands {
     const hit = stalkerResult.hit;
     if (hit && hit.attack.arcDegrees >= 360 && hit.serial !== this.#shockSerial) {
       this.#shockSerial = hit.serial;
-      this.#stalker.shockwave(hit.pose.x, hit.pose.z, hit.attack.reach);
-      this.#audio.play('slam', { x: hit.pose.x, y: 0.5, z: hit.pose.z });
+      this.#stalker.shockwave(hit.pose.x, hit.pose.z, hit.attack.reach, hit.pose.y);
+      this.#audio.play('slam', { x: hit.pose.x, y: hit.pose.y + 0.5, z: hit.pose.z });
       this.#camera.addTrauma(0.45);
     }
   }
 
   #summonStalker(): void {
     const p = this.#player.pose();
-    // Emerge on the far side of the arena centre from the player.
-    const angle = Math.atan2(p.x, p.z) + Math.PI;
-    const x = Math.sin(angle) * STALKER_EMERGE_DISTANCE;
-    const z = Math.cos(angle) * STALKER_EMERGE_DISTANCE;
+    let x: number;
+    let z: number;
+    if (Math.hypot(p.x, p.z) < ARENA_RADIUS) {
+      // In the ring: emerge on the far side of the arena centre from the player.
+      const angle = Math.atan2(p.x, p.z) + Math.PI;
+      x = Math.sin(angle) * STALKER_EMERGE_DISTANCE;
+      z = Math.cos(angle) * STALKER_EMERGE_DISTANCE;
+    } else {
+      // Out in the wilds: it finds you, rising where you are looking.
+      x = p.x - Math.sin(this.#camera.yaw) * STALKER_EMERGE_DISTANCE;
+      z = p.z - Math.cos(this.#camera.yaw) * STALKER_EMERGE_DISTANCE;
+    }
+    const y = Math.hypot(x, z) < ARENA_RADIUS ? 0 : this.grid.sample(x, z) + 0.05;
     this.#stalkerNight = nightIndexAt(this.#worldTime);
     this.#fellTonight = false;
     this.#fledTonight = false;
@@ -492,14 +641,14 @@ export class Game implements GameCommands {
       outcome: 'faded',
       markEarned: false,
     };
-    this.#onStalkerEvents(this.#stalker.summon(x, z, yawFromDirection(p.x - x, p.z - z)));
+    this.#onStalkerEvents(this.#stalker.summon(x, z, yawFromDirection(p.x - x, p.z - z), y));
   }
 
   #onStalkerEvents(flags: number): void {
     const stalker = this.#stalker;
-    const at = { x: stalker.pose.x, y: 1.6, z: stalker.pose.z };
+    const at = { x: stalker.pose.x, y: stalker.pose.y + 1.6, z: stalker.pose.z };
     if (flags & StalkerEvent.Emerged) {
-      announce('World event · Firstia', 'The Shadow Stalker stirs', 'A Unique Colossus hunts beneath the new moon. Blades cannot wound it. Parry.');
+      announce('World event', 'The Shadow Stalker stirs', 'A Unique Colossus hunts beneath the new moon. Blades cannot wound it. Parry.');
       this.#audio.play('gong');
       this.#audio.play('howl', at);
     }
@@ -651,7 +800,7 @@ export class Game implements GameCommands {
       moonPhase: moonPhaseAt(this.#worldTime),
       zoneTags: SANDBOX_WORLD.zoneTags,
     };
-    const modifiers = [...this.#baseModifiers, ...this.#marks.flatMap((m) => m.modifiers)];
+    const modifiers = [...equipmentModifiers([this.#weapon]), ...this.#marks.flatMap((m) => m.modifiers)];
     const stats = deriveCombatStats(resolveStats(PLAYER_BASE_STATS, modifiers, world));
     this.#player.stats = stats;
     this.#motorContext.speedMultiplier = stats.moveSpeed;
@@ -719,6 +868,8 @@ export class Game implements GameCommands {
     this.#daylight = this.#scene.setTime(renderTime, moonPhaseAt(renderTime));
     const night = 1 - this.#daylight;
     this.#arena.setNight(night, now);
+    this.#landmarks.update(now, night);
+    this.#water.update(now, frameDt, this.#scene.horizonColor, this.#scene.lightDirection, this.#scene.sun.color, this.#daylight);
     this.kit?.tick(now);
     this.#audio.setNight(night);
 
@@ -735,7 +886,7 @@ export class Game implements GameCommands {
     this.#rig.update(
       {
         motor,
-        moveset: DUAL_BLADES_MOVESET,
+        moveset: this.#motorContext.moveset,
         tuning: DEFAULT_MOTOR_TUNING,
         alpha,
         groundSpeed: this.#player.groundSpeed,
@@ -744,9 +895,20 @@ export class Game implements GameCommands {
       frameDt,
     );
 
-    const active = activeAttackStep(motor, DUAL_BLADES_MOVESET);
+    const active = activeAttackStep(motor, this.#motorContext.moveset);
+    const staff = this.#rig.weapon === 'staff';
     const leadBlade = active?.id.endsWith('2') ? 1 : 0;
-    this.#trails.forEach((trail, i) => trail.update(!!active && (active.arcDegrees >= 360 || i === leadBlade), frameDt));
+    this.#bladeTrails.forEach((trail, i) => trail.update(!staff && !!active && (active.arcDegrees >= 360 || i === leadBlade), frameDt));
+    for (const trail of this.#staffTrails) trail.update(staff && !!active, frameDt);
+
+    this.#scatter.update(this.#renderPos.x, this.#renderPos.z);
+    if (this.#wading && this.#player.groundSpeed > 0.5 && this.#phase === 'playing') {
+      this.#rippleTimer -= frameDt;
+      if (this.#rippleTimer <= 0) {
+        this.#rippleTimer = 0.32;
+        this.#water.ripple(this.#renderPos.x, this.#renderPos.z);
+      }
+    }
 
     const lockPoint = this.#lockTarget ? this.#lockTarget.lockPoint(this.#lockPoint) : null;
     this.#dummy.update(alpha, frameDt);
@@ -769,8 +931,8 @@ export class Game implements GameCommands {
   // --------------------------------------------------------------------------
 
   #applyRunState(): void {
-    const running = this.#phase === 'playing' && !this.#adBreak && !this.#reportOpen;
-    this.#loop.paused = this.#phase === 'paused' || this.#adBreak || this.#reportOpen;
+    const running = this.#phase === 'playing' && !this.#adBreak && !this.#reportOpen && !this.#mapOpen;
+    this.#loop.paused = this.#phase === 'paused' || this.#adBreak || this.#reportOpen || this.#mapOpen;
     this.#input.enabled = running;
     this.#audio.setPaused(!running);
     if (this.#touch) this.#touch.visible = running;
@@ -781,9 +943,19 @@ export class Game implements GameCommands {
     this.#input.bindHotkey('KeyT', () => this.toggleDrill());
     this.#input.bindHotkey('KeyG', () => this.toggleTracking());
     this.#input.bindHotkey('KeyY', () => this.toggleStrikeDrill());
+    this.#input.bindHotkey('KeyQ', () => this.#phase === 'playing' && this.swapWeapon());
+    this.#input.bindHotkey('PadY', () => this.#phase === 'playing' && this.swapWeapon());
     this.#input.bindHotkey('PadR3', () => this.#phase === 'playing' && this.toggleLock());
+    const toggleMap = () => {
+      if (this.#mapOpen) this.closeMap();
+      else this.openMap();
+    };
+    this.#input.bindHotkey('KeyM', toggleMap);
+    this.#input.bindHotkey('PadBack', toggleMap);
+    this.#input.bindHotkey('Escape', () => this.closeMap());
     this.#input.bindHotkey('PadStart', () => {
-      if (this.#reportOpen) this.closeReport();
+      if (this.#mapOpen) this.closeMap();
+      else if (this.#reportOpen) this.closeReport();
       else if (this.#phase === 'playing') this.pause();
       else if (this.#phase === 'paused') this.resume();
       else this.play();
@@ -800,7 +972,7 @@ export class Game implements GameCommands {
     document.addEventListener(
       'pointerlockchange',
       () => {
-        if (!this.#input.pointerLocked && this.#phase === 'playing' && !this.#touch) this.pause();
+        if (!this.#input.pointerLocked && this.#phase === 'playing' && !this.#touch && !this.#mapOpen && !this.#reportOpen) this.pause();
       },
       { signal },
     );
@@ -808,7 +980,9 @@ export class Game implements GameCommands {
     this.#scene.renderer.domElement.addEventListener(
       'click',
       () => {
-        if (this.#phase === 'playing' && !this.#touch && !this.#input.pointerLocked) this.#input.requestPointerLock();
+        if (this.#phase === 'playing' && !this.#touch && !this.#input.pointerLocked && !this.#mapOpen && !this.#reportOpen) {
+          this.#input.requestPointerLock();
+        }
       },
       { signal },
     );
@@ -880,6 +1054,53 @@ export class Game implements GameCommands {
     this.events.on('toast', ({ text, tone }) => pushToast(text, tone));
   }
 
+  #checkDiscovery(): void {
+    const p = this.#player.pose();
+    for (const landmark of LANDMARKS) {
+      if (this.#discovered.has(landmark.id)) continue;
+      if (Math.hypot(landmark.x - p.x, landmark.z - p.z) > landmark.radius) continue;
+      this.#discover(landmark);
+    }
+  }
+
+  #discover(landmark: Landmark): void {
+    this.#discovered.add(landmark.id);
+    saveDiscovered([...this.#discovered]);
+    this.#landmarks.setAttuned(landmark.id, true);
+    const found = this.#discovered.size;
+    announce(`Discovered · ${found}/${LANDMARKS.length}`, landmark.name, `${landmark.blurb} Its waystone wakes: you will rise here.`);
+    this.#audio.play('discover');
+    if (found === LANDMARKS.length) pushToast('Every corner of the Bramble Wilds found', 'gold');
+  }
+
+  #regionName(x: number, z: number, y: number): string {
+    const near = LANDMARKS.find((l) => Math.hypot(l.x - x, l.z - z) < l.radius * 1.5);
+    if (near) return near.name;
+    const b = biomeAt(x, z, y, this.#biome);
+    if (inLake(x, z)) return 'Mirror Lake';
+    if (b.gloam > 0.5) return 'The Gloamwood';
+    if (b.mesa > 0.5) return 'Windcut Mesa';
+    if (b.highland > 0.5) return 'Howling Ridge';
+    if (b.amber > 0.5) return 'Amber Meadow';
+    if (b.forest > 0.5) return 'Bramble Woods';
+    return 'The Bramble Wilds';
+  }
+
+  /** Paint the world map once, off the critical path. */
+  #paintMap(): void {
+    const pixels = renderMapPixels(this.grid, MAP_PIXELS);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = MAP_PIXELS;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.putImageData(new ImageData(pixels, MAP_PIXELS, MAP_PIXELS), 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      this.#mapUrl = URL.createObjectURL(blob);
+      this.#syncHud();
+    });
+  }
+
   #syncHud(): void {
     const motor = this.#player.motor;
     const pose = this.#player.pose();
@@ -924,6 +1145,16 @@ export class Game implements GameCommands {
         status: BOSS_STATUS[brain.phase] ?? 'hunting',
       },
       clock: { period: this.#period, moon: moonPhaseAt(this.#worldTime), night: 1 - this.#daylight },
+      weapon: { name: this.#weapon.name, moves: this.#motorContext.moveset.steps.map((step) => step.name) },
+      explore: {
+        mapUrl: this.#mapUrl,
+        x: pose.x,
+        z: pose.z,
+        facing: motor.facingYaw,
+        cameraYaw: this.#camera.yaw,
+        discovered: [...this.#discovered],
+        region: this.#regionName(pose.x, pose.z, pose.y),
+      },
       skill: {
         name: CRITICAL_STRIKE.name,
         level: this.#combat.skill.level,
@@ -944,4 +1175,8 @@ export class Game implements GameCommands {
       },
     });
   }
+}
+
+function movesetFor(weapon: WeaponDefinition): Moveset {
+  return MOVESETS[weapon.movesetId] ?? DUAL_BLADES_MOVESET;
 }

@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 
 export type Sfx =
   | 'swing'
+  | 'staff'
   | 'whiff'
   | 'dodge'
   | 'hit'
@@ -13,7 +14,8 @@ export type Sfx =
   | 'growl'
   | 'howl'
   | 'slam'
-  | 'gong';
+  | 'gong'
+  | 'discover';
 
 type Dest = AudioNode;
 
@@ -135,6 +137,11 @@ export class AudioEngine {
       case 'swing':
         this.#noiseSweep(dest, t, 0.16, 'bandpass', 600, 2600, 1.2, 0.32 * k);
         break;
+      case 'staff':
+        // Heavier, lower whoosh with a faint iron hum.
+        this.#noiseSweep(dest, t, 0.26, 'bandpass', 320, 1500, 1.1, 0.42 * k);
+        this.#tone(dest, t, 'sine', 95, 70, 0.22, 0.08 * k);
+        break;
       case 'whiff':
         this.#noiseSweep(dest, t, 0.09, 'highpass', 2200, 4200, 0.7, 0.12 * k);
         break;
@@ -186,6 +193,13 @@ export class AudioEngine {
       case 'slam':
         this.#tone(dest, t, 'sine', 75, 28, 0.65, 0.9 * k);
         this.#noiseSweep(dest, t, 0.45, 'lowpass', 500, 120, 0.7, 0.5 * k);
+        break;
+      case 'discover':
+        // A rising, bell-like arpeggio.
+        [523.3, 659.3, 784, 1046.5].forEach((f, i) => {
+          this.#tone(dest, t + i * 0.11, 'sine', f, f, 1.4, 0.12 * k, 0.01);
+          this.#tone(dest, t + i * 0.11, 'triangle', f * 2.01, f * 2.01, 0.5, 0.03 * k, 0.005);
+        });
         break;
       case 'gong':
         for (const [f, g] of [

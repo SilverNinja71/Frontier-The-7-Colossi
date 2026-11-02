@@ -1,48 +1,22 @@
 import { DeterministicRng } from '@frontier/combat-math';
 import * as THREE from 'three';
+import { ARENA_RADIUS } from '../world/geography.ts';
 import type { NatureKit } from './NatureKit.ts';
 import type { PhysicsWorld } from './PhysicsWorld.ts';
 
-const BROADLEAF = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5'];
-const PINES = ['Pine_1', 'Pine_2', 'Pine_3', 'Pine_4', 'Pine_5'];
-const DEAD_TREES = ['DeadTree_1', 'DeadTree_2'];
-const ROCKS = ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'];
-const BUSHES = ['Bush_Common', 'Bush_Common', 'Bush_Common_Flowers'];
-const UNDERGROWTH = ['Fern_1', 'Plant_1', 'Fern_1'];
-const FLOWERS = ['Flower_3_Group', 'Flower_4_Group'];
 const GRASS = ['Grass_Common_Short', 'Grass_Wispy_Short'];
 const PEBBLES = ['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Square_1'];
-/** Models whose shadows read at gameplay distance. */
-const SHADOW_CASTERS = new Set([...BROADLEAF, ...PINES, ...DEAD_TREES, ...ROCKS, 'Bush_Common', 'Bush_Common_Flowers']);
 
 export interface ArenaOptions {
-  /** Art kit from apps/asset-pipeline; null falls back to procedural props. */
+  /** Art kit from apps/asset-pipeline; null skips the decorative props. */
   kit: NatureKit | null;
-  /** Phones: thinner foliage. */
-  lowPower: boolean;
 }
 
-export const ARENA_RADIUS = 30;
 const WALL_RADIUS = ARENA_RADIUS + 1.6;
-const WORLD_SIZE = 260;
-const SEGMENTS = 140;
-
-/**
- * Deterministic height function. Both the render mesh and the Rapier trimesh are built from
- * it, and the server can rebuild identical collision from the same seed-free formula.
- */
-export function terrainHeight(x: number, z: number): number {
-  const r = Math.hypot(x, z);
-  const outside = smoothstep(ARENA_RADIUS + 3, ARENA_RADIUS + 18, r);
-  const hills = (fbm(x * 0.028, z * 0.028) - 0.32) * 10 * outside;
-  const bowl = smoothstep(ARENA_RADIUS + 4, ARENA_RADIUS + 40, r) * 4;
-  const mountains = smoothstep(96, 124, r) * 34 * (0.55 + fbm(x * 0.05 + 7, z * 0.05 - 3));
-  return Math.max(hills, -1.5) + bowl + mountains;
-}
 
 const BRAZIER_LIGHT = 26;
 
-/** The training-grounds arena: sand floor, ring wall with four gates, pillars, braziers, props. */
+/** The training-grounds arena: ring wall with four gates, markings, pillars, braziers, props. */
 export class ArenaTerrain {
   readonly group = new THREE.Group();
   readonly #markingMaterial = new THREE.MeshBasicMaterial({
@@ -62,13 +36,11 @@ export class ArenaTerrain {
   });
 
   constructor(scene: THREE.Scene, physics: PhysicsWorld, options: ArenaOptions) {
-    this.#buildGround(physics);
     this.#buildMarkings();
     this.#buildWall(physics);
     this.#buildPillars(physics);
     this.#buildBraziers(physics);
-    if (options.kit) this.#buildKitScatter(physics, options.kit, options.lowPower);
-    else this.#buildScatter(physics);
+    if (options.kit) this.#buildRingProps(options.kit);
     scene.add(this.group);
   }
 
@@ -85,41 +57,6 @@ export class ArenaTerrain {
       flame.mesh.visible = night > 0.02;
       flame.mesh.scale.set(1, 0.6 + 0.4 * night * flicker, 1);
     }
-  }
-
-  #buildGround(physics: PhysicsWorld): void {
-    const geometry = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, SEGMENTS, SEGMENTS);
-    geometry.rotateX(-Math.PI / 2);
-    const position = geometry.getAttribute('position') as THREE.BufferAttribute;
-    const colors = new Float32Array(position.count * 3);
-    const color = new THREE.Color();
-
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const z = position.getZ(i);
-      const y = terrainHeight(x, z);
-      position.setY(i, y);
-      groundColor(x, y, z, color);
-      color.toArray(colors, i * 3);
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.96, metalness: 0 }),
-    );
-    mesh.receiveShadow = true;
-    this.group.add(mesh);
-
-    const index = geometry.getIndex();
-    if (!index) throw new Error('terrain geometry must be indexed');
-    physics.addStatic(
-      physics.rapier.ColliderDesc.trimesh(
-        new Float32Array(position.array as ArrayLike<number>),
-        Uint32Array.from(index.array as ArrayLike<number>),
-      ).setFriction(0.8),
-    );
   }
 
   #buildMarkings(): void {
@@ -269,27 +206,18 @@ export class ArenaTerrain {
     }
   }
 
-  /** Instanced CC0 nature kit: forest, rocks and undergrowth, with grass and pebbles in the ring. */
-  #buildKitScatter(physics: PhysicsWorld, kit: NatureKit, lowPower: boolean): void {
+  /** Grass tufts at the wall's foot, pebbles on the sand, mushrooms by the pillars. */
+  #buildRingProps(kit: NatureKit): void {
     const rng = new DeterministicRng(2024);
     const placements = new Map<string, THREE.Matrix4[]>();
-    const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const euler = new THREE.Euler();
-    const scale = new THREE.Vector3();
-    const pos = new THREE.Vector3();
-    const density = lowPower ? 0.4 : 1;
-
-    const place = (model: string, x: number, z: number, s: number, sink = 0.05): number => {
-      const y = terrainHeight(x, z) - sink * s;
-      if (!kit.has(model)) return y;
-      pos.set(x, y, z);
-      quaternion.setFromEuler(euler.set(0, rng.next() * Math.PI * 2, 0));
-      scale.setScalar(s);
-      const list = placements.get(model) ?? [];
-      list.push(matrix.compose(pos, quaternion, scale).clone());
-      placements.set(model, list);
-      return y;
+    const place = (model: string, x: number, z: number, s: number) => {
+      if (!kit.has(model)) return;
+      const matrix = new THREE.Matrix4().compose(
+        new THREE.Vector3(x, -0.05 * s, z),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng.next() * Math.PI * 2),
+        new THREE.Vector3(s, s, s),
+      );
+      placements.set(model, [...(placements.get(model) ?? []), matrix]);
     };
     const inRing = (min: number, max: number): [number, number] => {
       const a = rng.next() * Math.PI * 2;
@@ -297,42 +225,8 @@ export class ArenaTerrain {
       return [Math.sin(a) * r, Math.cos(a) * r];
     };
     const pick = (models: readonly string[]) => models[Math.floor(rng.next() * models.length)]!;
-    const scatter = (count: number, models: readonly string[], min: number, max: number, smin: number, smax: number) => {
-      for (let i = 0; i < Math.round(count * density); i++) {
-        const [x, z] = inRing(min, max);
-        place(pick(models), x, z, smin + rng.next() * (smax - smin));
-      }
-    };
-
-    // Forest: broadleaf near the arena, pines taking over up the hills.
-    for (let i = 0; i < Math.round(150 * (lowPower ? 0.7 : 1)); i++) {
-      const [x, z] = inRing(42, 108);
-      const pine = rng.next() < smoothstep(48, 100, Math.hypot(x, z)) * 0.85 + 0.1;
-      const s = 0.85 + rng.next() * 0.5;
-      const y = place(pick(pine ? PINES : BROADLEAF), x, z, s);
-      physics.addStatic(physics.rapier.ColliderDesc.cylinder(1.5 * s, 0.32 * s).setTranslation(x, y + 1.5 * s, z));
-    }
-    // Dead trees hug the wall: the Stalker's side of the world.
-    for (let i = 0; i < 7; i++) {
-      const [x, z] = inRing(36, 46);
-      const s = 0.75 + rng.next() * 0.3;
-      const y = place(pick(DEAD_TREES), x, z, s);
-      physics.addStatic(physics.rapier.ColliderDesc.cylinder(1.5 * s, 0.35 * s).setTranslation(x, y + 1.5 * s, z));
-    }
-    for (let i = 0; i < 80; i++) {
-      const [x, z] = inRing(34, 110);
-      const s = 0.4 + rng.next() * rng.next() * 1.4;
-      const y = place(pick(ROCKS), x, z, s, 0.15);
-      if (s > 0.8) physics.addStatic(physics.rapier.ColliderDesc.ball(1.1 * s).setTranslation(x, y + 0.5 * s, z));
-    }
-    scatter(60, BUSHES, 34, 95, 0.8, 1.3);
-    scatter(70, UNDERGROWTH, 33, 85, 0.8, 1.4);
-    scatter(50, FLOWERS, 35, 75, 0.8, 1.2);
-    scatter(450, GRASS, 32.5, 70, 0.8, 1.4);
-
-    // Inside the ring: tufts at the wall's foot, pebbles on the sand, mushrooms by the pillars.
-    scatter(70, GRASS, 27.5, 29.8, 0.7, 1.1);
-    scatter(45, PEBBLES, 3, 28, 0.8, 1.6);
+    for (let i = 0; i < 70; i++) place(pick(GRASS), ...inRing(27.5, 29.8), 0.7 + rng.next() * 0.4);
+    for (let i = 0; i < 45; i++) place(pick(PEBBLES), ...inRing(3, 28), 0.8 + rng.next() * 0.8);
     for (let i = 0; i < 14; i++) {
       const pillar = Math.floor(i / 2.34) % 6;
       const angle = (pillar / 6) * Math.PI * 2 + Math.PI / 6;
@@ -340,155 +234,13 @@ export class ArenaTerrain {
       const z = Math.cos(angle) * 20 + (rng.next() - 0.5) * 3;
       place('Mushroom_Common', x, z, 0.8 + rng.next() * 0.6);
     }
-
-    // One BatchedMesh per material: a single draw call each, with per-object frustum culling
-    // for the camera and for the shadow map (an InstancedMesh spanning the map is all-or-nothing).
-    interface Batch {
-      geometries: Map<THREE.BufferGeometry, number>;
-      instances: { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 }[];
-      vertices: number;
-      indices: number;
-      castShadow: boolean;
-    }
-    const batches = new Map<THREE.Material, Batch>();
     for (const [model, matrices] of placements) {
       for (const part of kit.parts(model)) {
-        let batch = batches.get(part.material);
-        if (!batch) {
-          batch = { geometries: new Map(), instances: [], vertices: 0, indices: 0, castShadow: false };
-          batches.set(part.material, batch);
-        }
-        if (!batch.geometries.has(part.geometry)) {
-          batch.geometries.set(part.geometry, -1);
-          batch.vertices += part.geometry.getAttribute('position').count;
-          batch.indices += part.geometry.getIndex()!.count;
-        }
-        batch.castShadow ||= SHADOW_CASTERS.has(model);
-        for (const matrix of matrices) batch.instances.push({ geometry: part.geometry, matrix });
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, matrices.length);
+        matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
       }
     }
-    for (const [material, batch] of batches) {
-      const mesh = new THREE.BatchedMesh(batch.instances.length, batch.vertices, batch.indices, material);
-      for (const geometry of batch.geometries.keys()) batch.geometries.set(geometry, mesh.addGeometry(geometry));
-      for (const { geometry, matrix } of batch.instances) mesh.setMatrixAt(mesh.addInstance(batch.geometries.get(geometry)!), matrix);
-      mesh.castShadow = batch.castShadow;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-    }
   }
-
-  /** Procedural fallback when the art kit is unavailable. */
-  #buildScatter(physics: PhysicsWorld): void {
-    const rng = new DeterministicRng(2024);
-    const matrix = new THREE.Matrix4();
-    const quaternion = new THREE.Quaternion();
-    const euler = new THREE.Euler();
-    const scale = new THREE.Vector3();
-    const pos = new THREE.Vector3();
-
-    const treeCount = 150;
-    const trunks = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.22, 0.32, 2.4, 6).translate(0, 1.2, 0),
-      new THREE.MeshStandardMaterial({ color: '#6b4c33', flatShading: true }),
-      treeCount,
-    );
-    const crowns = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(1.7, 4.2, 7).translate(0, 4.0, 0),
-      new THREE.MeshStandardMaterial({ color: '#3f6b35', flatShading: true }),
-      treeCount,
-    );
-    const crownColor = new THREE.Color();
-    for (let i = 0; i < treeCount; i++) {
-      const angle = rng.next() * Math.PI * 2;
-      const radius = 44 + rng.next() * 62;
-      const x = Math.sin(angle) * radius;
-      const z = Math.cos(angle) * radius;
-      const s = 0.8 + rng.next() * 0.9;
-      pos.set(x, terrainHeight(x, z) - 0.1, z);
-      quaternion.setFromEuler(euler.set(0, rng.next() * Math.PI * 2, 0));
-      scale.set(s, s * (0.9 + rng.next() * 0.4), s);
-      matrix.compose(pos, quaternion, scale);
-      trunks.setMatrixAt(i, matrix);
-      crowns.setMatrixAt(i, matrix);
-      crowns.setColorAt(i, crownColor.setHSL(0.27 + rng.next() * 0.06, 0.42, 0.26 + rng.next() * 0.1, THREE.SRGBColorSpace));
-      physics.addStatic(physics.rapier.ColliderDesc.cylinder(1.2 * s, 0.3 * s).setTranslation(x, pos.y + 1.2 * s, z));
-    }
-    trunks.castShadow = crowns.castShadow = true;
-    trunks.receiveShadow = crowns.receiveShadow = true;
-    this.group.add(trunks, crowns);
-
-    const rockCount = 110;
-    const rocks = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(1, 0),
-      new THREE.MeshStandardMaterial({ color: '#8a8780', flatShading: true, roughness: 0.9 }),
-      rockCount,
-    );
-    for (let i = 0; i < rockCount; i++) {
-      const angle = rng.next() * Math.PI * 2;
-      const radius = 35 + rng.next() * 75;
-      const x = Math.sin(angle) * radius;
-      const z = Math.cos(angle) * radius;
-      const s = 0.35 + rng.next() * rng.next() * 2.4;
-      pos.set(x, terrainHeight(x, z) + s * 0.25, z);
-      quaternion.setFromEuler(euler.set(rng.next() * 3, rng.next() * 3, rng.next() * 3));
-      scale.set(s * (1 + rng.next() * 0.6), s * 0.7, s);
-      rocks.setMatrixAt(i, matrix.compose(pos, quaternion, scale));
-      if (s > 1) physics.addStatic(physics.rapier.ColliderDesc.ball(s * 0.8).setTranslation(pos.x, pos.y, pos.z));
-    }
-    rocks.castShadow = true;
-    rocks.receiveShadow = true;
-    this.group.add(rocks);
-  }
-}
-
-function groundColor(x: number, y: number, z: number, out: THREE.Color): void {
-  const r = Math.hypot(x, z);
-  const n = fbm(x * 0.15, z * 0.15);
-  // Authored in sRGB; Color converts to the linear working space.
-  const srgb = THREE.SRGBColorSpace;
-  const sand = tmpA.setRGB(0.7 + n * 0.08, 0.6 + n * 0.07, 0.43 + n * 0.05, srgb);
-  const grass = tmpB.setRGB(0.36 + n * 0.12, 0.52 + n * 0.14, 0.25 + n * 0.05, srgb);
-  out.copy(sand).lerp(grass, smoothstep(ARENA_RADIUS + 1, ARENA_RADIUS + 6, r));
-  if (y > 7) out.lerp(tmpC.setRGB(0.5, 0.48, 0.44, srgb), smoothstep(7, 12, y));
-  if (y > 22) out.lerp(tmpC.setRGB(0.92, 0.94, 0.96, srgb), smoothstep(22, 28, y));
-}
-const tmpA = new THREE.Color();
-const tmpB = new THREE.Color();
-const tmpC = new THREE.Color();
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-function hash2(ix: number, iz: number): number {
-  let h = (Math.imul(ix, 374761393) + Math.imul(iz, 668265263)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-function valueNoise(x: number, z: number): number {
-  const ix = Math.floor(x);
-  const iz = Math.floor(z);
-  const fx = x - ix;
-  const fz = z - iz;
-  const u = fx * fx * (3 - 2 * fx);
-  const v = fz * fz * (3 - 2 * fz);
-  const a = hash2(ix, iz);
-  const b = hash2(ix + 1, iz);
-  const c = hash2(ix, iz + 1);
-  const d = hash2(ix + 1, iz + 1);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
-function fbm(x: number, z: number): number {
-  let sum = 0;
-  let amplitude = 0.5;
-  let frequency = 1;
-  for (let i = 0; i < 4; i++) {
-    sum += amplitude * valueNoise(x * frequency, z * frequency);
-    frequency *= 2;
-    amplitude *= 0.5;
-  }
-  return sum;
 }

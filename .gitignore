@@ -9,3 +9,10 @@ coverage/
 # Personal-use models (served by the dev server only; never committed or built)
 apps/client/private-assets/*
 !apps/client/private-assets/README.md
+
+# Xcode / SwiftPM (apps/apple)
+.build/
+.swiftpm/
+xcuserdata/
+DerivedData/
+*.xcuserstate

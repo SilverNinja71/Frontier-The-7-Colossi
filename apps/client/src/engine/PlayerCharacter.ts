@@ -51,15 +51,19 @@ export class PlayerCharacter {
   lastParryStartTick = Number.NEGATIVE_INFINITY;
   #lastStep: MotorStepResult = { velX: 0, velZ: 0, events: 0 };
 
+  /** Where the next respawn happens (the nearest attuned waystone, set by the game). */
+  spawn: Vec3;
+
   constructor(
     private readonly physics: PhysicsWorld,
-    private readonly spawn: Vec3,
+    spawn: Vec3,
     public stats: CombatStats,
     maxHp: number,
     maxStamina: number,
     private readonly motorContext: MotorContext,
   ) {
     const { rapier, world } = physics;
+    this.spawn = { ...spawn };
     this.motor = createMotorState(maxStamina, 0);
     this.maxHp = this.hp = maxHp;
 
@@ -176,15 +180,20 @@ export class PlayerCharacter {
     return Math.hypot(this.#curr.x - this.#prev.x, this.#curr.z - this.#prev.z) / this.motorContext.dt;
   }
 
+  /** Fast travel: appear at a point, facing `yaw`, with nothing carried over. */
+  teleport(to: Vec3, yaw: number): void {
+    this.body.setTranslation({ x: to.x, y: to.y + FEET_OFFSET + 0.05, z: to.z }, true);
+    this.#verticalVelocity = 0;
+    this.motor.facingYaw = yaw;
+    Object.assign(this.#curr, { x: to.x, y: to.y, z: to.z, yaw });
+    Object.assign(this.#prev, this.#curr);
+  }
+
   #respawn(): void {
     this.#ticksSinceSpawn = 0;
-    this.body.setTranslation({ x: this.spawn.x, y: this.spawn.y + FEET_OFFSET, z: this.spawn.z }, true);
-    this.#verticalVelocity = 0;
     this.hp = this.maxHp;
     revive(this.motor);
-    this.motor.facingYaw = 0;
-    Object.assign(this.#curr, { x: this.spawn.x, y: this.spawn.y, z: this.spawn.z, yaw: 0 });
-    Object.assign(this.#prev, this.#curr);
+    this.teleport(this.spawn, 0);
   }
 }
 

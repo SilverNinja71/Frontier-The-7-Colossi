@@ -24,7 +24,7 @@ const PAD_BUTTONS: Record<number, number> = {
   6: InputButton.Sprint, // LT
   7: InputButton.Attack, // RT
 };
-const PAD_HOTKEYS: Record<number, string> = { 9: 'PadStart', 11: 'PadR3' };
+const PAD_HOTKEYS: Record<number, string> = { 3: 'PadY', 8: 'PadBack', 9: 'PadStart', 11: 'PadR3' };
 const STICK_DEADZONE = 0.18;
 /** Right stick look speed at full deflection, in mouse-pixel equivalents per second. */
 const PAD_LOOK_X = 950;

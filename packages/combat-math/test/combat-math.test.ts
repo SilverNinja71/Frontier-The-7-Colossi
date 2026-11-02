@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MOTOR_TUNING,
   DUAL_BLADES_MOVESET,
+  MOVESETS,
+  STAFF_MOVESET,
   DeterministicRng,
   MotorEvent,
   activeAttackStep,
@@ -93,7 +95,7 @@ describe('stats & world marks', () => {
   };
   const lycaonMark: WorldMarkDefinition = {
     id: 'mark-night-lycaon',
-    name: 'Mark of the Night Lycaon',
+    name: 'Mark of the Moonless Hunt',
     description: '',
     source: { colossusId: 'shadow-stalker', outcome: 'survive' },
     modifiers: [
@@ -256,5 +258,34 @@ describe('skill evolution', () => {
     const progress = { skillId: 'critical-strike', level: 1, xp: 0, counters: {} };
     expect(grantSkillXp(progress, criticalStrike, 250)).toBe(2); // 100 + 150
     expect(progress).toMatchObject({ level: 3, xp: 0 });
+  });
+});
+
+describe('staff moveset', () => {
+  const staffCtx: MotorContext = { ...ctx, moveset: STAFF_MOVESET };
+
+  it('chains all four strikes when buffered', () => {
+    const s = createMotorState(200);
+    const seen: number[] = [];
+    for (let t = 0; t < 140; t++) {
+      stepMotor(s, frame({ pressed: t % 4 === 0 ? InputButton.Attack : 0 }), staffCtx);
+      if (s.action === CharacterAction.Attack && !seen.includes(s.comboStep)) seen.push(s.comboStep);
+    }
+    expect(seen).toEqual([0, 1, 2, 3]);
+  });
+
+  it('out-reaches the blades', () => {
+    const dummyBody: Hurtbox[] = [
+      { id: 'torso', kind: 'body', offset: { x: 0, y: 1.1, z: 0 }, radius: 0.45, damageMultiplier: 1, critBonus: 0 },
+    ];
+    const attacker = { x: 0, y: 0, z: -3.3, yaw: Math.PI }; // facing +Z, 3.3 m away
+    const target = { x: 0, y: 0, z: 0, yaw: 0 };
+    expect(testMeleeHit(attacker, STAFF_MOVESET.steps[0], target, dummyBody)).not.toBeNull();
+    expect(testMeleeHit(attacker, DUAL_BLADES_MOVESET.steps[0], target, dummyBody)).toBeNull();
+  });
+
+  it('is registered by id for weapons to reference', () => {
+    expect(MOVESETS[STAFF_MOVESET.id]).toBe(STAFF_MOVESET);
+    expect(MOVESETS[DUAL_BLADES_MOVESET.id]).toBe(DUAL_BLADES_MOVESET);
   });
 });

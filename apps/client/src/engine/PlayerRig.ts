@@ -23,6 +23,8 @@ interface Pose {
   crouch: number;
 }
 
+export type WeaponKind = 'blades' | 'staff';
+
 export interface RigFrame {
   motor: MotorState;
   moveset: Moveset;
@@ -40,6 +42,12 @@ export class PlayerRig {
   readonly root = new THREE.Group();
   /** World-space trail anchors on each blade. */
   readonly bladeAnchors: { base: THREE.Object3D; tip: THREE.Object3D }[] = [];
+  /** Trail anchors along the staff (mid-shaft to tip). */
+  readonly staffAnchors: { base: THREE.Object3D; tip: THREE.Object3D }[] = [];
+  #weapon: WeaponKind = 'blades';
+  readonly #blades: THREE.Mesh[] = [];
+  readonly #staff = new THREE.Group();
+  readonly #staffGold: THREE.MeshStandardMaterial;
 
   readonly #spin = new THREE.Group();
   readonly #rollPivot = new THREE.Group();
@@ -126,7 +134,10 @@ export class PlayerRig {
       hand.position.y = -0.56;
       shoulder.add(hand);
       hand.add(mesh(new THREE.BoxGeometry(0.16, 0.035, 0.05), dark, 0, -0.02, 0));
-      hand.add(mesh(new THREE.BoxGeometry(0.035, 0.8, 0.012), this.#bladeMaterial, 0, -0.43, 0));
+      const blade = mesh(new THREE.BoxGeometry(0.035, 0.8, 0.012), this.#bladeMaterial, 0, -0.43, 0);
+      hand.add(blade);
+      this.#blades.push(blade);
+      if (side > 0) hand.add(this.#staff);
       const base = new THREE.Object3D();
       base.position.y = -0.08;
       const tip = new THREE.Object3D();
@@ -147,13 +158,48 @@ export class PlayerRig {
       this.#hips.add(hip);
     }
 
+    // Ruyi Jingu Bang: dark iron shaft, gold caps; gripped a third of the way up.
+    const iron = new THREE.MeshStandardMaterial({ color: '#2f2f36', metalness: 0.7, roughness: 0.35 });
+    this.#staffGold = new THREE.MeshStandardMaterial({
+      color: '#e0b040',
+      metalness: 0.9,
+      roughness: 0.3,
+      emissive: '#ffcf5a',
+      emissiveIntensity: 0,
+    });
+    this.#staff.add(mesh(new THREE.CylinderGeometry(0.032, 0.032, 2.1, 8), iron, 0, -0.5, 0));
+    for (const y of [0.47, -1.47]) this.#staff.add(mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.18, 8), this.#staffGold, 0, y, 0));
+    this.#staff.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.06, 8), this.#staffGold, 0, -0.12, 0));
+    const staffBase = new THREE.Object3D();
+    staffBase.position.y = -0.7;
+    const staffTip = new THREE.Object3D();
+    staffTip.position.y = -1.56;
+    this.#staff.add(staffBase, staffTip);
+    this.staffAnchors.push({ base: staffBase, tip: staffTip });
+    this.#staff.visible = false;
+
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh) o.castShadow = true;
     });
     this.#buildTattoo();
   }
 
-  /** Mark of the Night Lycaon: violet brands on the bare torso and arms that flare at night. */
+  get weapon(): WeaponKind {
+    return this.#weapon;
+  }
+
+  setWeapon(kind: WeaponKind): void {
+    this.#weapon = kind;
+    this.#staff.visible = kind === 'staff';
+    for (const blade of this.#blades) blade.visible = kind === 'blades';
+  }
+
+  /** Anchors for weapon trails of the equipped weapon. */
+  get trailAnchors(): readonly { base: THREE.Object3D; tip: THREE.Object3D }[] {
+    return this.#weapon === 'staff' ? this.staffAnchors : this.bladeAnchors;
+  }
+
+  /** Mark of the Moonless Hunt: violet brands on the bare torso and arms that flare at night. */
   setMark(owned: boolean, night: number): void {
     this.#tattoo.visible = owned;
     for (const shoulder of [this.#shoulderR, this.#shoulderL]) {
@@ -240,15 +286,22 @@ export class PlayerRig {
       }
       case CharacterAction.Attack: {
         const step = moveset.steps[motor.comboStep] ?? moveset.steps[0];
-        spin = this.#attackPose(target, step, Math.min(tickTime, attackStepTotalTicks(step)));
+        const tick = Math.min(tickTime, attackStepTotalTicks(step));
+        spin = this.#weapon === 'staff' ? this.#staffAttackPose(target, step, tick) : this.#attackPose(target, step, tick);
         rate = tickTime >= step.windupTicks && tickTime < step.windupTicks + step.activeTicks ? 45 : 18;
         break;
       }
       case CharacterAction.Parry: {
         // Blades crossed in front through the deflect window, then lowered.
         const held = tickTime < tuning.parry.guardTicks;
-        target.right = held ? { pitch: 1.35, yaw: 0.62, roll: -0.15 } : { pitch: 0.6, yaw: -0.2, roll: 0.15 };
-        target.left = held ? { pitch: 1.35, yaw: -0.62, roll: 0.15 } : { pitch: 0.55, yaw: 0.25, roll: -0.15 };
+        if (this.#weapon === 'staff') {
+          // Staff held crosswise in front of the chest.
+          target.right = held ? { pitch: 1.35, yaw: 0.95, roll: -0.1 } : { pitch: 0.6, yaw: -0.35, roll: 0.15 };
+          target.left = held ? { pitch: 1.35, yaw: -0.25, roll: 0.1 } : { pitch: 0.7, yaw: 0.25, roll: -0.15 };
+        } else {
+          target.right = held ? { pitch: 1.35, yaw: 0.62, roll: -0.15 } : { pitch: 0.6, yaw: -0.2, roll: 0.15 };
+          target.left = held ? { pitch: 1.35, yaw: -0.62, roll: 0.15 } : { pitch: 0.55, yaw: 0.25, roll: -0.15 };
+        }
         target.crouch = -0.08;
         target.legR = 0.25;
         target.legL = -0.3;
@@ -295,6 +348,7 @@ export class PlayerRig {
     }
     const deflecting = motor.action === CharacterAction.Parry && motor.actionTick < tuning.parry.perfectTicks;
     this.#parryFlash = Math.max(0, this.#parryFlash - frameDt * 4);
+    this.#staffGold.emissiveIntensity = motor.action === CharacterAction.Attack ? 0.7 : deflecting ? 1.0 : 0;
     this.#bladeMaterial.emissiveIntensity =
       (motor.action === CharacterAction.Attack ? 0.9 : deflecting ? 1.5 : 0.08) + this.#parryFlash * 4;
   }
@@ -324,6 +378,53 @@ export class PlayerRig {
       target.right = { pitch: 0.35 - swing * 0.55 * runAmount, yaw: -0.15, roll: 0.15 };
       target.left = { pitch: 0.35 + swing * 0.55 * runAmount, yaw: 0.15, roll: -0.15 };
     }
+    if (this.#weapon === 'staff' && !sprinting) target.right = { pitch: 0.55 - swing * 0.2 * runAmount, yaw: -0.35, roll: 0.15 };
+  }
+
+  /** Ruyi staff strikes; returns the body spin angle (whirlwind). */
+  #staffAttackPose(target: Pose, step: AttackStep, tick: number): number {
+    const windEnd = step.windupTicks;
+    const activeEnd = windEnd + step.activeTicks;
+    const phaseT = (from: number, to: number) => Math.min(1, Math.max(0, (tick - from) / (to - from)));
+    const windup = easeOut(phaseT(0, windEnd));
+    const active = easeOut(phaseT(windEnd, activeEnd));
+    const recovery = phaseT(activeEnd, attackStepTotalTicks(step));
+    const guard: ArmPose = { pitch: 0.6, yaw: -0.35, roll: 0.15 };
+    // The left hand rides the shaft a little inboard of the right.
+    const support = (arm: ArmPose): ArmPose => ({ pitch: arm.pitch + 0.1, yaw: arm.yaw + 0.35, roll: -arm.roll });
+    const strike = (wound: ArmPose, struck: ArmPose): ArmPose =>
+      tick < windEnd ? blendArm(guard, wound, windup) : tick < activeEnd ? blendArm(wound, struck, active) : blendArm(struck, guard, recovery);
+    const settle = (from: number, to: number) => (tick < windEnd ? from * windup : tick < activeEnd ? from + (to - from) * active : to * (1 - recovery));
+    target.legR = 0.35;
+    target.legL = -0.45;
+
+    let spin = 0;
+    switch (step.id) {
+      case 'ruyi-thrust':
+        target.right = strike({ pitch: 1.2, yaw: -0.3, roll: 0.1 }, { pitch: 1.57, yaw: 0, roll: 0 });
+        target.lean = settle(0.15, -0.3);
+        target.twist = settle(-0.3, 0.2);
+        break;
+      case 'ruyi-sweep':
+        target.right = strike({ pitch: 1.45, yaw: -2.0, roll: 0.2 }, { pitch: 1.4, yaw: 1.6, roll: -0.1 });
+        target.twist = settle(-0.5, 0.6);
+        target.lean = -0.1;
+        break;
+      case 'ruyi-smash':
+        target.right = strike({ pitch: 2.9, yaw: -0.1, roll: 0 }, { pitch: 1.0, yaw: 0, roll: 0 });
+        target.lean = settle(0.2, -0.35);
+        target.crouch = settle(0, -0.15);
+        break;
+      default: {
+        // Ruyi Whirlwind: staff held out to the side, two full turns.
+        target.right = strike({ pitch: 1.5, yaw: -1.5, roll: 0 }, { pitch: 1.5, yaw: -1.5, roll: 0 });
+        target.crouch = -0.18 * windup * (1 - recovery);
+        spin = tick < windEnd ? 0.5 * windup : tick < activeEnd ? 0.5 - (Math.PI * 4 + 0.5) * active : 0;
+        break;
+      }
+    }
+    target.left = support(target.right);
+    return spin;
   }
 
   /** Writes the slash pose; returns the body spin angle (finisher). */

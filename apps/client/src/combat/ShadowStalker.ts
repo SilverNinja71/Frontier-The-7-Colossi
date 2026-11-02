@@ -66,7 +66,7 @@ export class ShadowStalker implements CombatTarget {
 
   readonly #body: RAPIER.RigidBody;
   readonly #controller: RAPIER.KinematicCharacterController;
-  readonly #prev = { x: 0, z: 0, yaw: 0 };
+  readonly #prev = { x: 0, y: 0, z: 0, yaw: 0 };
   readonly #rise = new THREE.Group();
   readonly #spine = new THREE.Group();
   readonly #head = new THREE.Group();
@@ -105,6 +105,8 @@ export class ShadowStalker implements CombatTarget {
     this.#controller = world.createCharacterController(0.05);
     this.#controller.setUp({ x: 0, y: 1, z: 0 });
     this.#controller.enableSnapToGround(0.6);
+    this.#controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
+    this.#controller.enableAutostep(0.4, 0.2, false);
     this.#controller.setApplyImpulsesToDynamicBodies(false);
 
     this.#hideMaterial = new THREE.MeshStandardMaterial({
@@ -179,12 +181,12 @@ export class ShadowStalker implements CombatTarget {
     return this.brain.phase === StalkerPhase.Exposed;
   }
 
-  summon(x: number, z: number, yaw: number): number {
-    const events = summonStalker(this.brain, x, z, yaw);
-    this.#body.setTranslation({ x, y: COLLIDER_CENTER, z }, true);
+  summon(x: number, z: number, yaw: number, y = 0): number {
+    const events = summonStalker(this.brain, x, z, yaw, y);
+    this.#body.setTranslation({ x, y: y + COLLIDER_CENTER, z }, true);
     this.collider.setEnabled(true);
-    Object.assign(this.pose, { x, y: 0, z, yaw });
-    Object.assign(this.#prev, { x, z, yaw });
+    Object.assign(this.pose, { x, y, z, yaw });
+    Object.assign(this.#prev, { x, y, z, yaw });
     this.root.visible = true;
     this.#mistBoost = 1;
     return events;
@@ -192,7 +194,7 @@ export class ShadowStalker implements CombatTarget {
 
   step(ctx: StalkerContext): StalkerStepResult {
     if (!this.present) return IDLE_RESULT;
-    Object.assign(this.#prev, { x: this.pose.x, z: this.pose.z, yaw: this.pose.yaw });
+    Object.assign(this.#prev, { x: this.pose.x, y: this.pose.y, z: this.pose.z, yaw: this.pose.yaw });
     const result = stepStalker(this.brain, ctx);
     this.#controller.computeColliderMovement(this.collider, { x: result.velX * ctx.dt, y: -0.2, z: result.velZ * ctx.dt });
     const move = this.#controller.computedMovement();
@@ -208,6 +210,7 @@ export class ShadowStalker implements CombatTarget {
     }
     const t = this.#body.translation();
     this.brain.x = this.pose.x = t.x;
+    this.brain.y = this.pose.y = t.y - COLLIDER_CENTER;
     this.brain.z = this.pose.z = t.z;
     this.pose.yaw = this.brain.yaw;
   }
@@ -219,7 +222,7 @@ export class ShadowStalker implements CombatTarget {
   }
 
   lockPoint(out: THREE.Vector3): THREE.Vector3 {
-    return out.set(this.pose.x, this.exposed ? 0.9 : 1.6, this.pose.z);
+    return out.set(this.pose.x, this.pose.y + (this.exposed ? 0.9 : 1.6), this.pose.z);
   }
 
   headPosition(out: THREE.Vector3): THREE.Vector3 {
@@ -240,7 +243,7 @@ export class ShadowStalker implements CombatTarget {
     const x = this.#prev.x + (this.pose.x - this.#prev.x) * alpha;
     const z = this.#prev.z + (this.pose.z - this.#prev.z) * alpha;
     const speed = Math.hypot(this.pose.x - this.#prev.x, this.pose.z - this.#prev.z) * 30;
-    this.root.position.set(x, 0, z);
+    this.root.position.set(x, this.#prev.y + (this.pose.y - this.#prev.y) * alpha, z);
     this.root.rotation.y = lerpAngle(this.#prev.yaw, this.pose.yaw, alpha);
 
     const t = Math.max(0, b.phaseTick - 1 + alpha);
@@ -390,8 +393,8 @@ export class ShadowStalker implements CombatTarget {
   }
 
   /** Expanding shockwave at a world point (howl / pounce landing). */
-  shockwave(x: number, z: number, radius: number): void {
-    this.#shock.position.set(x, 0.06, z);
+  shockwave(x: number, z: number, radius: number, y = 0): void {
+    this.#shock.position.set(x, y + 0.06, z);
     this.#shock.userData.radius = radius;
     this.#shockAge = 0;
     this.#mistBoost = 1;
@@ -414,9 +417,13 @@ export class ShadowStalker implements CombatTarget {
     this.#ring.visible = true;
     const committed = t >= windup - a.commitTicks;
     if (a.origin === 'target') {
-      this.#ring.position.set(committed ? this.brain.aimX : target.x, 0.05, committed ? this.brain.aimZ : target.z);
+      this.#ring.position.set(
+        committed ? this.brain.aimX : target.x,
+        (committed ? this.brain.aimY : target.y) + 0.05,
+        committed ? this.brain.aimZ : target.z,
+      );
     } else {
-      this.#ring.position.set(this.pose.x, 0.05, this.pose.z);
+      this.#ring.position.set(this.pose.x, this.pose.y + 0.05, this.pose.z);
     }
     const grow = 0.25 + 0.75 * (t / windup);
     this.#ring.scale.setScalar(a.reach * grow);
@@ -459,7 +466,7 @@ export class ShadowStalker implements CombatTarget {
           const cos = Math.cos(this.pose.yaw);
           const sin = Math.sin(this.pose.yaw);
           this.#mistPos[k] = this.pose.x + Math.cos(a) * 0.7 + along * sin;
-          this.#mistPos[k + 1] = 0.3 + Math.random() * 1.6;
+          this.#mistPos[k + 1] = this.pose.y + 0.3 + Math.random() * 1.6;
           this.#mistPos[k + 2] = this.pose.z + Math.sin(a) * 0.7 + along * cos;
         } else {
           this.#mistLife[i] = 0;

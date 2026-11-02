@@ -74,7 +74,8 @@ export class CombatSystem {
 
   constructor(
     private readonly player: PlayerCharacter,
-    private readonly moveset: Moveset,
+    /** The equipped weapon's moveset; swapped by the game only while the player is free. */
+    public moveset: Moveset,
     private readonly tuning: MotorTuning,
     private readonly targets: readonly CombatTarget[],
     private readonly events: GameEvents,

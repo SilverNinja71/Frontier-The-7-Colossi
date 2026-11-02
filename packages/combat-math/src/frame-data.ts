@@ -84,6 +84,82 @@ export const DUAL_BLADES_MOVESET: Moveset = {
   ],
 };
 
+/**
+ * Ruyi Jingu Bang: Sun Wukong's staff. Slower and four strikes long, but longer reach,
+ * wider sweeps and heavier motion values than the dual blades.
+ */
+export const STAFF_MOVESET: Moveset = {
+  id: 'ruyi-staff',
+  steps: [
+    {
+      id: 'ruyi-thrust',
+      name: 'Cloud-Splitting Thrust',
+      windupTicks: 5,
+      activeTicks: 3,
+      recoveryTicks: 9,
+      staminaCost: 8,
+      motionValue: 0.85,
+      reach: 3.5,
+      arcDegrees: 40,
+      heightMin: 0.4,
+      heightMax: 1.9,
+      lunge: 0.9,
+      impact: 0.8,
+    },
+    {
+      id: 'ruyi-sweep',
+      name: 'Sweeping Crescent',
+      windupTicks: 6,
+      activeTicks: 4,
+      recoveryTicks: 9,
+      staminaCost: 9,
+      motionValue: 1.0,
+      reach: 3.3,
+      arcDegrees: 200,
+      heightMin: 0.2,
+      heightMax: 1.6,
+      lunge: 0.4,
+      impact: 1.0,
+    },
+    {
+      id: 'ruyi-smash',
+      name: 'Mountain-Splitter',
+      windupTicks: 9,
+      activeTicks: 4,
+      recoveryTicks: 14,
+      staminaCost: 12,
+      motionValue: 1.5,
+      reach: 3.6,
+      arcDegrees: 60,
+      heightMin: 0,
+      heightMax: 2.4,
+      lunge: 1.0,
+      impact: 1.8,
+    },
+    {
+      id: 'ruyi-whirlwind',
+      name: 'Ruyi Whirlwind',
+      windupTicks: 6,
+      activeTicks: 7,
+      recoveryTicks: 16,
+      staminaCost: 15,
+      motionValue: 1.9,
+      reach: 3.4,
+      arcDegrees: 360,
+      heightMin: 0.3,
+      heightMax: 1.8,
+      lunge: 1.2,
+      impact: 1.6,
+    },
+  ],
+};
+
+/** Every moveset by id, so weapons can name theirs (WeaponDefinition.movesetId). */
+export const MOVESETS: Readonly<Record<string, Moveset>> = {
+  [DUAL_BLADES_MOVESET.id]: DUAL_BLADES_MOVESET,
+  [STAFF_MOVESET.id]: STAFF_MOVESET,
+};
+
 export interface MotorTuning {
   /** m/s at full stick, before moveSpeed multiplier. */
   runSpeed: number;

@@ -1,11 +1,14 @@
 import { CharacterAction } from '@frontier/shared-types';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AdFailureReason, PlatformService } from '../platform/index.ts';
+import { LANDMARKS, WORLD_HALF } from '../world/geography.ts';
+import { ICONS, type IconName } from './icons.ts';
 import { pushToast, useHud, type HudState, type HuntReport } from './store.ts';
 
 export function Hud({ platform }: { platform: PlatformService }) {
   const phase = useHud((s) => s.phase);
   const adBreak = useHud((s) => s.adBreak);
+  const mapOpen = useHud((s) => s.mapOpen);
   return (
     <div className="pointer-events-none fixed inset-0 select-none font-sans text-white">
       {phase === 'loading' && <LoadingScreen />}
@@ -14,6 +17,7 @@ export function Hud({ platform }: { platform: PlatformService }) {
       {(phase === 'playing' || phase === 'paused') && <PlayingHud />}
       {phase === 'playing' && <FallenOverlay />}
       {phase === 'paused' && <PauseMenu platform={platform} />}
+      {phase === 'playing' && mapOpen && <WorldMap />}
       {(phase === 'playing' || phase === 'paused') && <HuntReportModal />}
       {adBreak && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/90 text-sm tracking-widest text-white/70 uppercase">
@@ -24,15 +28,95 @@ export function Hud({ platform }: { platform: PlatformService }) {
   );
 }
 
+// --- Primitives ----------------------------------------------------------------
+
+function Icon({ name, size = 20, className = '' }: { name: IconName; size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+      dangerouslySetInnerHTML={{ __html: ICONS[name] }}
+    />
+  );
+}
+
+type ButtonVariant = 'primary' | 'secondary' | 'arcane' | 'ghost';
+
+function Button({
+  children,
+  onClick,
+  variant = 'secondary',
+  size,
+  block = false,
+  icon,
+  disabled = false,
+  title,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  variant?: ButtonVariant;
+  size?: 'sm' | 'lg';
+  block?: boolean;
+  icon?: IconName;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const classes = [
+    'fx-btn',
+    variant !== 'secondary' && `fx-btn--${variant}`,
+    size && `fx-btn--${size}`,
+    block && 'fx-btn--block',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <button type="button" className={classes} onClick={onClick} disabled={disabled} title={title}>
+      {icon && <Icon name={icon} size={size === 'sm' ? 15 : 18} />}
+      {children}
+    </button>
+  );
+}
+
+function Toggle({ label, on, onClick, hint }: { label: string; on: boolean; onClick: () => void; hint?: string }) {
+  return (
+    <button type="button" className="fx-toggle" aria-pressed={on} onClick={onClick} title={hint}>
+      <span>{label}</span>
+      <span className="fx-switch" />
+    </button>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 text-[10px] font-semibold tracking-[0.35em] text-amber-200/80 uppercase">
+      <span className="fx-divider flex-1" />
+      {children}
+      <span className="fx-divider flex-1" />
+    </div>
+  );
+}
+
 // --- Screens ----------------------------------------------------------------
 
 function Title() {
   return (
     <div className="text-center">
-      <div className="font-display text-5xl font-bold tracking-[0.35em] text-amber-100 drop-shadow-[0_4px_18px_rgba(0,0,0,0.8)] sm:text-7xl">
+      <div className="font-display text-5xl font-bold tracking-[0.3em] text-amber-100 drop-shadow-[0_4px_18px_rgba(0,0,0,0.85)] sm:text-7xl">
         FRONTIER
       </div>
-      <div className="mt-2 text-xs font-semibold tracking-[0.5em] text-amber-200/80 uppercase sm:text-sm">The Seven Colossi</div>
+      <div className="mt-2 flex items-center justify-center gap-3 font-display text-xs font-semibold tracking-[0.45em] text-amber-200/85 uppercase sm:text-sm">
+        <span className="fx-divider w-10 sm:w-16" />
+        of the Colossi
+        <span className="fx-divider w-10 sm:w-16" />
+      </div>
     </div>
   );
 }
@@ -64,27 +148,31 @@ function ErrorScreen() {
 function TitleScreen() {
   const commands = useHud((s) => s.commands);
   const touch = useHud((s) => s.touch);
+  const discovered = useHud((s) => s.explore.discovered.length);
   return (
-    <div className="pointer-events-auto fixed inset-0 flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-black/60 via-black/25 to-black/70 p-6">
-      <Title />
-      <p className="max-w-md text-center text-sm text-white/75">
-        Firstia Training Grounds. Learn the dual-blade rhythm: strike, dodge, parry. When the new moon rises, something
-        else hunts here.
-      </p>
-      <button
-        type="button"
-        onClick={() => commands?.play()}
-        className="rounded-md border border-amber-300/60 bg-amber-500/20 px-10 py-3 text-sm font-bold tracking-[0.3em] text-amber-100 uppercase shadow-[0_0_30px_rgba(251,191,36,0.25)] transition hover:bg-amber-500/35 active:scale-95"
-      >
-        Enter the Arena
-      </button>
-      <ControlsGrid touch={touch} />
-      {!touch && (
-        <div className="max-w-md text-center text-[11px] text-white/50">
-          Gamepad: LS move · RS camera · X/RT strike · A dodge · RB parry · B/LT sprint · R3 lock · Start pause
-        </div>
-      )}
-      <RecordsLine />
+    <div className="pointer-events-auto fixed inset-0 overflow-y-auto bg-gradient-to-b from-black/65 via-black/20 to-black/75">
+      <div className="flex min-h-full flex-col items-center justify-center gap-6 p-6">
+        <Title />
+        <p className="max-w-md text-center text-sm leading-relaxed text-white/80 [text-shadow:0_1px_4px_#000]">
+          Learn the rhythm in the arena of the First Bastion — strike, dodge, parry — then walk out of the gates. Ridges, a lake, a
+          haunted wood: {LANDMARKS.length} landmarks wait in the wilds. When the new moon rises, something else hunts.
+        </p>
+        <Button variant="primary" size="lg" icon="play" onClick={() => commands?.play()}>
+          Enter the Bastion
+        </Button>
+        {discovered > 1 && (
+          <div className="text-xs tracking-wide text-sky-200/80">
+            {discovered}/{LANDMARKS.length} landmarks discovered
+          </div>
+        )}
+        <ControlsGrid touch={touch} />
+        {!touch && (
+          <div className="max-w-md text-center text-[11px] text-white/50">
+            Gamepad: LS move · RS camera · X/RT strike · A dodge · RB parry · B/LT sprint · Y swap · R3 lock · Back map · Start pause
+          </div>
+        )}
+        <RecordsLine />
+      </div>
     </div>
   );
 }
@@ -102,34 +190,41 @@ function RecordsLine() {
 }
 
 function ControlsGrid({ touch }: { touch: boolean }) {
-  const rows: [string, string][] = touch
+  const rows: [string[], string][] = touch
     ? [
-        ['Left thumb', 'Move'],
-        ['Right drag', 'Camera'],
-        ['Strike', 'Combo (tap ×3)'],
-        ['Dodge', 'Roll with i-frames'],
-        ['Parry', 'Deflect at the moment of impact'],
-        ['Lock', 'Lock on to a target'],
-        ['Sprint', 'Toggle sprint'],
+        [['Left thumb'], 'Move'],
+        [['Right drag'], 'Camera'],
+        [['Strike'], 'Combo'],
+        [['Dodge'], 'Roll with i-frames'],
+        [['Parry'], 'Deflect at the moment of impact'],
+        [['Swap'], 'Twin Fangs ⇄ Ruyi Staff'],
+        [['Map'], 'World map & discoveries'],
       ]
     : [
-        ['WASD', 'Move'],
-        ['Mouse', 'Camera (click to lock)'],
-        ['LMB / J', 'Twin Cut combo ×3'],
-        ['Space', 'Dodge roll (i-frames)'],
-        ['RMB / L', 'Parry: deflect at the moment of impact'],
-        ['Tab / MMB', 'Lock on'],
-        ['Shift', 'Sprint'],
-        ['T / G / Y', 'Slam drill / dummy tracking / parry drill'],
-        ['N', 'Call the new moon (sandbox)'],
-        ['Esc / P', 'Pause'],
-        ['F3', 'Debug overlay'],
+        [['W', 'A', 'S', 'D'], 'Move'],
+        [['Mouse'], 'Camera (click to lock)'],
+        [['LMB', 'J'], 'Strike combo'],
+        [['Space'], 'Dodge roll (i-frames)'],
+        [['RMB', 'L'], 'Parry: deflect at the moment of impact'],
+        [['Q'], 'Swap weapon: Twin Fangs ⇄ Ruyi Staff'],
+        [['Tab'], 'Lock on'],
+        [['Shift'], 'Sprint'],
+        [['M'], 'World map & discoveries'],
+        [['T', 'G', 'Y'], 'Slam drill · dummy tracking · parry drill'],
+        [['N'], 'Call the new moon (sandbox)'],
+        [['Esc'], 'Pause'],
       ];
   return (
-    <div className="grid grid-cols-[auto_auto] gap-x-6 gap-y-1 rounded-lg border border-white/10 bg-black/40 px-5 py-3 text-xs">
-      {rows.map(([key, action]) => (
-        <div key={key} className="contents">
-          <span className="font-mono font-bold text-amber-200">{key}</span>
+    <div className="fx-panel grid grid-cols-[auto_auto] items-center gap-x-5 gap-y-1.5 px-5 py-4 text-xs">
+      {rows.map(([keys, action]) => (
+        <div key={action} className="contents">
+          <span className="flex flex-wrap justify-end gap-1">
+            {keys.map((k) => (
+              <span key={k} className="fx-key">
+                {k}
+              </span>
+            ))}
+          </span>
           <span className="text-white/75">{action}</span>
         </div>
       ))}
@@ -142,6 +237,8 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
   const bossVisible = useHud((s) => s.boss.visible);
   const target = useHud((s) => s.target);
   const doubloons = useHud((s) => s.doubloons);
+  const weapon = useHud((s) => s.weapon);
+  const discovered = useHud((s) => s.explore.discovered.length);
   const [adMessage, setAdMessage] = useState<string | null>(null);
   const [adPending, setAdPending] = useState(false);
   const canReward = platform.canShowRewarded('cosmetic-doubloons');
@@ -167,54 +264,53 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
   };
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-30 overflow-y-auto bg-black/55 backdrop-blur-[2px]">
+    <div className="pointer-events-auto fixed inset-0 z-30 overflow-y-auto bg-black/55 backdrop-blur-[3px]">
       {/* Banner sits beside the panel on landscape embeds (e.g. 800×450) and wraps below on phones. */}
       <div className="flex min-h-full flex-wrap items-center justify-center gap-4 p-4">
-        <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-white/15 bg-slate-950/85 p-6 shadow-2xl">
-          <div className="text-center font-display text-2xl tracking-[0.3em] text-amber-100">PAUSED</div>
-          <button
-            type="button"
-            onClick={() => commands?.resume()}
-            className="rounded-md bg-amber-500/80 py-2.5 text-sm font-bold tracking-widest text-slate-950 uppercase hover:bg-amber-400 active:scale-[0.98]"
-          >
+        <div className="fx-panel flex w-full max-w-sm flex-col gap-3.5 p-6">
+          <div className="text-center font-display text-2xl font-bold tracking-[0.3em] text-amber-100">PAUSED</div>
+          <Button variant="primary" block icon="play" onClick={() => commands?.resume()}>
             Resume
-          </button>
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" icon="map" onClick={() => commands?.openMap()}>
+              Map {discovered}/{LANDMARKS.length}
+            </Button>
+            <Button size="sm" icon="swap" onClick={() => commands?.swapWeapon()} title="Swap weapon (Q)">
+              Swap
+            </Button>
+          </div>
+          <div className="text-center text-[11px] text-white/55">
+            Wielding <span className="font-semibold text-amber-100">{weapon.name}</span> · {weapon.moves.join(' → ')}
+          </div>
+
+          <SectionTitle>Training</SectionTitle>
           <div className="grid grid-cols-2 gap-2">
             <Toggle label="Slam drill" on={target.drill} onClick={() => commands?.toggleDrill()} />
-            <Toggle label="Dummy tracking" on={target.tracking} onClick={() => commands?.toggleTracking()} />
+            <Toggle label="Tracking" on={target.tracking} onClick={() => commands?.toggleTracking()} />
             <Toggle label="Parry drill" on={target.strikeDrill} onClick={() => commands?.toggleStrikeDrill()} />
           </div>
-          <button
-            type="button"
-            onClick={() => commands?.summonNewMoon()}
-            className="rounded-md border border-violet-300/50 bg-violet-600/25 py-2 text-xs font-semibold tracking-wide text-violet-100 hover:bg-violet-600/40"
-          >
-            ☾ Call the new moon (Shadow Stalker)
-          </button>
+          <Button variant="arcane" block icon="moon" onClick={() => commands?.summonNewMoon()}>
+            Call the new moon
+          </Button>
           {bossVisible && (
-            <button
-              type="button"
-              onClick={() => commands?.fleeToDawn()}
-              className="rounded-md border border-white/15 bg-white/5 py-2 text-xs text-white/60 hover:bg-white/10"
-            >
-              Flee until dawn (ends the hunt · forfeits the mark)
-            </button>
+            <Button variant="ghost" size="sm" block icon="sunrise" onClick={() => commands?.fleeToDawn()}>
+              Flee until dawn · forfeits the mark
+            </Button>
           )}
           <MarksPanel />
 
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs">
+          <SectionTitle>Cosmetics</SectionTitle>
+          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs">
             <div className="mb-2 flex items-center justify-between">
-              <span className="font-semibold tracking-wide text-amber-200 uppercase">Cosmetic shop</span>
-              <span className="tabular-nums text-amber-100">{doubloons} doubloons</span>
+              <span className="font-semibold tracking-wide text-amber-200 uppercase">Shop</span>
+              <span className="flex items-center gap-1 tabular-nums text-amber-100">
+                <Icon name="coin" size={14} /> {doubloons}
+              </span>
             </div>
-            <button
-              type="button"
-              disabled={!canReward || adPending}
-              onClick={watchAd}
-              className="w-full rounded-md border border-amber-300/40 py-2 font-semibold text-amber-100 enabled:hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {adPending ? 'Playing ad…' : 'Watch an ad · +25 doubloons'}
-            </button>
+            <Button variant="ghost" size="sm" block disabled={!canReward || adPending} onClick={watchAd}>
+              {adPending ? 'Playing ad…' : 'Watch an ad · +25'}
+            </Button>
             <p className="mt-2 text-white/50">
               {adMessage ??
                 (canReward
@@ -223,9 +319,7 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
                     ? 'Rewarded ads are not offered here.'
                     : 'Rewarded ads are available on CrazyGames builds.')}
             </p>
-            <p className="mt-1 text-white/40">
-              Revive tokens: casual dungeons only · No ads ever during Colossus raids
-            </p>
+            <p className="mt-1 text-white/40">Revive tokens: casual dungeons only · No ads ever during Colossus raids</p>
           </div>
         </div>
         {platform.available && <div id="pause-banner" className="h-[250px] w-[300px] shrink-0" />}
@@ -267,20 +361,6 @@ function MarksPanel() {
   );
 }
 
-function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md border px-2 py-2 text-xs font-semibold transition ${
-        on ? 'border-emerald-300/60 bg-emerald-500/20 text-emerald-100' : 'border-white/15 bg-white/5 text-white/60'
-      }`}
-    >
-      {label}: {on ? 'On' : 'Off'}
-    </button>
-  );
-}
-
 // --- In-game HUD --------------------------------------------------------------
 
 function PlayingHud() {
@@ -288,7 +368,7 @@ function PlayingHud() {
   return (
     <>
       {bossVisible ? <BossFrame /> : <TargetFrame />}
-      <ClockChip />
+      <MinimapCorner />
       <Announcement />
       <SkillTracker />
       <Toasts />
@@ -323,7 +403,7 @@ function Orb({ value, max, label, from, to, pulse = false }: { value: number; ma
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div
-      className={`relative h-[72px] w-[72px] overflow-hidden rounded-full border-2 border-white/25 bg-black/55 shadow-[0_0_24px_rgba(0,0,0,0.6)] sm:h-20 sm:w-20 ${pulse ? 'animate-pulse' : ''}`}
+      className={`relative h-[72px] w-[72px] overflow-hidden rounded-full border-2 border-amber-200/45 bg-black/60 shadow-[0_0_0_3px_rgba(10,12,18,0.75),0_0_24px_rgba(0,0,0,0.6)] sm:h-20 sm:w-20 ${pulse ? 'animate-pulse' : ''}`}
     >
       <div
         className="absolute inset-x-0 bottom-0 transition-[height] duration-150 ease-out"
@@ -343,23 +423,32 @@ function ActionBar() {
   const target = useHud((s) => s.target);
   const touch = useHud((s) => s.touch);
   const lockOn = useHud((s) => s.lockOn);
+  const weapon = useHud((s) => s.weapon);
+  const mapOpen = useHud((s) => s.mapOpen);
   if (touch) return null; // touch devices get on-screen buttons instead
   const attacking = v.action === CharacterAction.Attack;
+  const staff = weapon.name.toLowerCase().includes('staff');
+  const move = attacking ? weapon.moves[v.comboStep] : undefined;
   return (
-    <div className="fixed bottom-4 left-1/2 flex -translate-x-1/2 gap-1.5">
-      <Slot keyLabel="LMB" name="Twin Cut" active={attacking} disabled={v.exhausted}>
-        <div className="mt-1 flex justify-center gap-1">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className={`h-1.5 w-1.5 rounded-full ${attacking && i <= v.comboStep ? 'bg-amber-300' : 'bg-white/20'}`} />
+    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 flex -translate-x-1/2 items-end gap-2">
+      <Slot keyLabel="LMB" name={move ?? 'Strike'} icon={staff ? 'staff' : 'swords'} active={attacking} disabled={v.exhausted} primary>
+        <div className="flex justify-center gap-1">
+          {weapon.moves.map((m, i) => (
+            <span
+              key={m}
+              className={`h-1.5 w-1.5 rotate-45 ${attacking && i <= v.comboStep ? 'bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]' : 'bg-white/25'}`}
+            />
           ))}
         </div>
       </Slot>
-      <Slot keyLabel="Space" name="Dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
-      <Slot keyLabel="RMB" name="Parry" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
-      <Slot keyLabel="Tab" name="Lock" active={lockOn} />
-      <Slot keyLabel="Shift" name="Sprint" active={v.sprinting} disabled={v.exhausted} />
-      <Slot keyLabel="T" name="Drill" active={target.drill} trainingOnly />
-      <Slot keyLabel="G" name="Track" active={target.tracking} trainingOnly />
+      <Slot keyLabel="Q" name="Swap" icon={staff ? 'swords' : 'staff'} active={false} />
+      <Slot keyLabel="Space" name="Dodge" icon="dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
+      <Slot keyLabel="RMB" name="Parry" icon="shield" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
+      <Slot keyLabel="Tab" name="Lock" icon="lock" active={lockOn} />
+      <Slot keyLabel="Shift" name="Sprint" icon="sprint" active={v.sprinting} disabled={v.exhausted} />
+      <Slot keyLabel="M" name="Map" icon="map" active={mapOpen} trainingOnly />
+      <Slot keyLabel="T" name="Drill" icon="target" active={target.drill} trainingOnly />
+      <Slot keyLabel="G" name="Track" icon="eye" active={target.tracking} trainingOnly />
     </div>
   );
 }
@@ -367,33 +456,34 @@ function ActionBar() {
 function Slot({
   keyLabel,
   name,
+  icon,
   active,
   disabled = false,
   highlight = false,
   trainingOnly = false,
+  primary = false,
   children,
 }: {
   keyLabel: string;
   name: string;
+  icon: IconName;
   active: boolean;
   disabled?: boolean;
   highlight?: boolean;
-  /** Sandbox toggles: dropped on narrower screens so the bar never covers the orbs. */
+  /** Secondary slots: dropped on narrower screens so the bar never covers the orbs. */
   trainingOnly?: boolean;
+  primary?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div
-      className={`${trainingOnly ? 'hidden lg:flex' : 'flex'} h-12 w-14 flex-col sm:h-14 sm:w-16 items-center justify-center rounded-md border text-center transition ${
-        highlight
-          ? 'border-sky-300 bg-sky-500/30 shadow-[0_0_16px_rgba(56,189,248,0.6)]'
-          : active
-            ? 'border-amber-300/80 bg-amber-500/25'
-            : 'border-white/15 bg-black/45'
-      } ${disabled ? 'opacity-40' : ''}`}
+      className={`fx-slot ${primary ? 'fx-slot--primary' : ''} ${trainingOnly ? 'max-lg:!hidden' : ''} ${primary ? '' : 'max-sm:!h-12 max-sm:!w-12'}`}
+      data-state={highlight ? 'highlight' : active ? 'active' : 'idle'}
+      data-disabled={disabled}
     >
-      <span className="font-mono text-[10px] text-amber-200/90">{keyLabel}</span>
-      <span className="text-[11px] font-semibold">{name}</span>
+      <span className="fx-key">{keyLabel}</span>
+      <Icon name={icon} size={primary ? 24 : 19} />
+      <span className={`fx-slot__name ${primary ? 'max-w-[64px] truncate' : 'max-sm:hidden'}`}>{name}</span>
       {children}
     </div>
   );
@@ -401,9 +491,12 @@ function Slot({
 
 function TargetFrame() {
   const t = useHud((s) => s.target);
+  const region = useHud((s) => s.explore.region);
   const pct = (t.hp / t.maxHp) * 100;
+  // Out in the wilds the dummy's frame gives way to the region name.
+  if (region && region !== 'Bastion Training Grounds' && t.dps === 0 && !t.strikeDrill) return null;
   return (
-    <div className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] w-[min(26rem,80vw)] -translate-x-1/2">
+    <div className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] w-[min(26rem,62vw)] -translate-x-1/2">
       <div className="mb-1 flex items-baseline justify-between text-xs">
         <span className="font-semibold tracking-wide [text-shadow:0_1px_3px_#000]">
           <span className="mr-1 text-amber-300">Lv.{t.level}</span>
@@ -413,7 +506,7 @@ function TargetFrame() {
           {t.dps > 0 ? `${t.dps} DPS · ${t.total.toLocaleString()} dmg` : t.strikeDrill ? 'Parry its swings' : 'Strike to begin'}
         </span>
       </div>
-      <div className="relative h-3 overflow-hidden rounded-sm border border-black/60 bg-black/60">
+      <div className="relative h-3 overflow-hidden rounded-sm border border-black/60 bg-black/60 shadow-[0_0_0_1px_rgba(253,230,138,0.25)]">
         <div className="absolute inset-y-0 left-0 bg-white/70 transition-[width] delay-200 duration-700 ease-out" style={{ width: `${pct}%` }} />
         <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-rose-700 to-rose-500 transition-[width] duration-100" style={{ width: `${pct}%` }} />
       </div>
@@ -432,7 +525,9 @@ function SkillTracker() {
   const touch = useHud((s) => s.touch);
   const pct = Math.min(100, (skill.precisionHits / skill.goal) * 100);
   return (
-    <div className={`fixed left-3 top-3 w-52 rounded-md border border-white/10 bg-black/45 p-2.5 text-[11px] ${touch ? 'hidden lg:block' : ''}`}>
+    <div
+      className={`fixed left-3 top-3 w-52 rounded-lg border border-amber-200/15 bg-black/50 p-2.5 text-[11px] shadow-[0_6px_18px_rgba(0,0,0,0.35)] ${touch ? 'hidden lg:block' : 'max-md:hidden'}`}
+    >
       <div className="flex justify-between font-semibold">
         <span className="text-amber-200">{skill.name}</span>
         <span className="text-white/60">Lv.{skill.level}</span>
@@ -495,7 +590,7 @@ function DebugPanel() {
   const platformId = useHud((s) => s.platformId);
   if (!debug.visible) return null;
   return (
-    <div className="fixed right-3 top-14 rounded bg-black/70 p-2 font-mono text-[10px] leading-relaxed text-lime-300">
+    <div className="fixed left-3 top-28 rounded bg-black/70 p-2 font-mono text-[10px] leading-relaxed text-lime-300">
       <div>fps {debug.fps}</div>
       <div>tick {debug.tick}</div>
       <div>
@@ -504,6 +599,182 @@ function DebugPanel() {
       <div>action {debug.action}</div>
       <div>stalker {debug.stalker}</div>
       <div>platform {platformId}</div>
+    </div>
+  );
+}
+
+// --- Exploration -----------------------------------------------------------------
+
+const MINIMAP_SIZE = 148;
+/** Minimap scale, pixels per metre. */
+const MINIMAP_ZOOM = 1.1;
+
+/** Minimap with the clock and the region name beneath it. */
+function MinimapCorner() {
+  const explore = useHud((s) => s.explore);
+  const commands = useHud((s) => s.commands);
+  const touch = useHud((s) => s.touch);
+  return (
+    <div className="pointer-events-none fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex flex-col items-center gap-1.5">
+      <div className={touch ? 'pointer-events-auto' : ''} onClick={touch ? () => commands?.openMap() : undefined}>
+        <Minimap size={touch ? 108 : MINIMAP_SIZE} />
+      </div>
+      <div className="max-w-[190px] truncate text-center font-display text-[10px] font-semibold tracking-[0.08em] text-amber-100 [text-shadow:0_1px_3px_#000]">
+        {explore.region}
+      </div>
+      <ClockChip />
+    </div>
+  );
+}
+
+function Minimap({ size }: { size: number }) {
+  const e = useHud((s) => s.explore);
+  const half = size / 2;
+  const mapPx = WORLD_HALF * 2 * MINIMAP_ZOOM;
+  const offsetX = half - (e.x + WORLD_HALF) * MINIMAP_ZOOM;
+  const offsetY = half - (e.z + WORLD_HALF) * MINIMAP_ZOOM;
+  return (
+    <div className="fx-minimap" style={{ width: size, height: size }}>
+      {e.mapUrl && (
+        <img
+          src={e.mapUrl}
+          alt=""
+          draggable={false}
+          className="absolute top-0 left-0 max-w-none"
+          style={{ width: mapPx, height: mapPx, transform: `translate(${offsetX}px, ${offsetY}px)` }}
+        />
+      )}
+      {LANDMARKS.map((l) => {
+        let dx = (l.stone.x - e.x) * MINIMAP_ZOOM;
+        let dy = (l.stone.z - e.z) * MINIMAP_ZOOM;
+        const d = Math.hypot(dx, dy);
+        const edge = half - 11;
+        const clamped = d > edge;
+        if (clamped) {
+          dx = (dx / d) * edge;
+          dy = (dy / d) * edge;
+        }
+        const known = e.discovered.includes(l.id);
+        return (
+          <div
+            key={l.id}
+            className={`absolute flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[9px] font-bold ${
+              known ? 'bg-sky-400/90 text-slate-950 shadow-[0_0_6px_rgba(56,189,248,0.9)]' : 'bg-black/70 text-amber-200 ring-1 ring-amber-200/70'
+            } ${clamped ? 'opacity-80' : ''}`}
+            style={{ left: half + dx, top: half + dy }}
+            title={known ? l.name : 'Undiscovered'}
+          >
+            {known ? <Icon name="waystone" size={10} /> : '?'}
+          </div>
+        );
+      })}
+      {/* Camera view cone, then the player arrow. */}
+      <div
+        className="absolute h-0 w-0"
+        style={{ left: half, top: half, transform: `rotate(${-e.cameraYaw}rad)` }}
+      >
+        <div
+          className="absolute -top-[44px] -left-[30px] h-[44px] w-[60px] opacity-30"
+          style={{ background: 'linear-gradient(to top, rgba(255,255,255,0.9), transparent)', clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}
+        />
+      </div>
+      <div className="absolute" style={{ left: half, top: half, transform: `translate(-50%, -50%) rotate(${-e.facing}rad)` }}>
+        <svg width="16" height="18" viewBox="0 0 16 18" aria-hidden="true">
+          <path d="M8 0 L15 17 L8 13 L1 17 Z" fill="#fde68a" stroke="#1a1206" strokeWidth="1.5" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <div className="absolute top-0.5 left-1/2 -translate-x-1/2 font-display text-[10px] font-bold text-amber-100 [text-shadow:0_1px_2px_#000]">
+        N
+      </div>
+    </div>
+  );
+}
+
+/** Full world map: landmarks and discovery progress. The wilds are walked; there is no fast travel. */
+function WorldMap() {
+  const e = useHud((s) => s.explore);
+  const commands = useHud((s) => s.commands);
+  const touch = useHud((s) => s.touch);
+  const found = e.discovered.length;
+  const toPct = (v: number) => `${((v + WORLD_HALF) / (WORLD_HALF * 2)) * 100}%`;
+  return (
+    <div className="pointer-events-auto fixed inset-0 z-30 overflow-y-auto bg-black/65 backdrop-blur-[3px]">
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
+        <div className="fx-panel flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6 md:flex-row">
+          <div className="relative mx-auto aspect-square w-full max-w-[min(78vh,560px)] shrink-0 overflow-hidden rounded-lg border border-amber-200/30 bg-[#1a2230] shadow-[inset_0_0_40px_rgba(0,0,0,0.6)]">
+            {e.mapUrl && <img src={e.mapUrl} alt="Map of the Bramble Wilds" className="absolute inset-0 h-full w-full" draggable={false} />}
+            <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_60px_rgba(10,8,4,0.55)]" />
+            {LANDMARKS.map((l) => {
+              const known = e.discovered.includes(l.id);
+              return (
+                <div
+                  key={l.id}
+                  className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+                  style={{ left: toPct(l.stone.x), top: toPct(l.stone.z) }}
+                  title={known ? l.name : 'Undiscovered'}
+                >
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-bold transition ${
+                      known
+                        ? 'border-sky-200 bg-sky-500/90 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.9)]'
+                        : 'border-amber-200/70 bg-black/70 text-amber-200'
+                    }`}
+                  >
+                    {known ? <Icon name="waystone" size={13} /> : '?'}
+                  </span>
+                  <span className="mt-0.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-white/90 max-sm:hidden">
+                    {known ? l.name : '???'}
+                  </span>
+                </div>
+              );
+            })}
+            <div
+              className="pointer-events-none absolute"
+              style={{ left: toPct(e.x), top: toPct(e.z), transform: `translate(-50%, -50%) rotate(${-e.facing}rad)` }}
+            >
+              <svg width="18" height="20" viewBox="0 0 16 18" aria-hidden="true">
+                <path d="M8 0 L15 17 L8 13 L1 17 Z" fill="#fde68a" stroke="#1a1206" strokeWidth="1.5" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 font-display text-sm font-bold text-amber-100 [text-shadow:0_1px_3px_#000]">N</div>
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div>
+              <div className="font-display text-xl font-bold tracking-[0.2em] text-amber-100 uppercase">The Bramble Wilds</div>
+              <div className="mt-1 text-xs text-white/60">
+                {found}/{LANDMARKS.length} landmarks discovered · {e.region}
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full bg-gradient-to-r from-sky-500 to-sky-300" style={{ width: `${(found / LANDMARKS.length) * 100}%` }} />
+              </div>
+            </div>
+            <div className="fx-divider" />
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {LANDMARKS.map((l) => {
+                const known = e.discovered.includes(l.id);
+                const metres = Math.round(Math.hypot(l.x - e.x, l.z - e.z));
+                return (
+                  <li key={l.id} className="flex items-center justify-between gap-2 rounded-md border border-white/[0.06] bg-white/[0.03] px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className={`truncate font-semibold ${known ? 'text-white' : 'text-white/35'}`}>{known ? l.name : 'Undiscovered'}</div>
+                      <div className="truncate text-[11px] text-white/45">{known ? l.blurb : 'Walk out and find it. Follow the "?" on the map.'}</div>
+                    </div>
+                    <span className={`shrink-0 text-[11px] tabular-nums ${known ? 'text-sky-200/80' : 'text-amber-200/70'}`}>{metres} m</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-[11px] text-white/45">Waystones you wake become the places you rise after a fall. There is no fast travel: the wilds are walked.</p>
+            <div className="mt-auto flex items-center justify-between gap-2">
+              <span className="text-[11px] text-white/45">{touch ? 'Tap the minimap to open this map' : 'M or Esc to close'}</span>
+              <Button variant="primary" size="sm" icon="close" onClick={() => commands?.closeMap()}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -523,7 +794,7 @@ function BossFrame() {
   const pct = (boss.resolve / boss.maxResolve) * 100;
   const status = BOSS_STATUS[boss.status];
   return (
-    <div className="fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] w-[min(34rem,88vw)] -translate-x-1/2 text-center">
+    <div className="fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] w-[min(34rem,60vw)] -translate-x-1/2 text-center max-sm:w-[56vw]">
       <div className="text-[10px] font-semibold tracking-[0.45em] text-violet-300/90 uppercase [text-shadow:0_1px_3px_#000]">
         Unique Colossus
       </div>
@@ -535,7 +806,7 @@ function BossFrame() {
           </span>
         )}
       </div>
-      <div className="relative mt-1 h-3 overflow-hidden rounded-sm border border-black/70 bg-black/70">
+      <div className="relative mt-1 h-3 overflow-hidden rounded-sm border border-black/70 bg-black/70 shadow-[0_0_0_1px_rgba(196,181,253,0.3)]">
         <div className="absolute inset-y-0 left-0 bg-white/60 transition-[width] delay-200 duration-700" style={{ width: `${pct}%` }} />
         <div
           className="absolute inset-y-0 left-0 bg-gradient-to-r from-violet-800 via-violet-500 to-fuchsia-400 transition-[width] duration-150"
@@ -571,8 +842,8 @@ function ClockChip() {
   const night = clock.period === 'night';
   return (
     <div
-      className={`fixed right-3 top-3 rounded-full border px-3 py-1 text-xs font-semibold tracking-wide capitalize [text-shadow:0_1px_2px_#000] ${
-        night && clock.moon === 'new' ? 'border-violet-400/60 bg-violet-950/60 text-violet-100' : 'border-white/15 bg-black/40 text-white/80'
+      className={`rounded-full border px-3 py-0.5 text-[11px] font-semibold tracking-wide capitalize [text-shadow:0_1px_2px_#000] ${
+        night && clock.moon === 'new' ? 'border-violet-400/60 bg-violet-950/70 text-violet-100' : 'border-amber-200/25 bg-black/55 text-white/85'
       }`}
     >
       {PERIOD_ICON[clock.period]} {clock.period}
@@ -608,7 +879,7 @@ function FallenOverlay() {
           It feeds · +{Math.round(fallen.fed)} Resolve
         </div>
       )}
-      <div className="mt-2 text-xs text-white/60">Rising again…</div>
+      <div className="mt-2 text-xs text-white/60">Rising again at the nearest waystone…</div>
     </div>
   );
 }
@@ -654,11 +925,11 @@ function HuntReportModal() {
   return (
     <div className="pointer-events-auto fixed inset-0 z-40 overflow-y-auto bg-black/65 backdrop-blur-[2px]">
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-xl border border-violet-300/30 bg-slate-950/90 p-6 shadow-2xl">
+        <div className="fx-panel w-full max-w-md p-6">
           <div className="text-center text-[11px] font-semibold tracking-[0.45em] text-violet-300 uppercase">Hunt report</div>
           <div className="mt-1 text-center font-display text-2xl tracking-[0.08em] text-white">{OUTCOME_TITLE[report.outcome]}</div>
           {report.markEarned && (
-            <div className="mt-2 text-center text-sm text-violet-200">Mark acquired: Mark of the Night Lycaon</div>
+            <div className="mt-2 text-center text-sm text-violet-200">Mark acquired: Mark of the Moonless Hunt</div>
           )}
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
             {rows.map(([label, value]) => (
@@ -673,13 +944,11 @@ function HuntReportModal() {
             Record · {records.hunts} hunts · subdued {records.subdued} · survived {records.survived} · best chain {records.bestChain}
             {records.fastestSubdueSeconds !== null && ` · fastest subdue ${formatTime(records.fastestSubdueSeconds)}`}
           </div>
-          <button
-            type="button"
-            onClick={() => commands?.closeReport()}
-            className="mt-4 w-full rounded-md bg-violet-500/80 py-2.5 text-sm font-bold tracking-widest text-white uppercase hover:bg-violet-500 active:scale-[0.98]"
-          >
-            Continue
-          </button>
+          <div className="mt-4">
+            <Button variant="arcane" block onClick={() => commands?.closeReport()}>
+              Continue
+            </Button>
+          </div>
         </div>
       </div>
     </div>

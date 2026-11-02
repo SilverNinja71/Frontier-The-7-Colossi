@@ -1,4 +1,4 @@
-import { DUAL_BLADES_MOVESET, STALKER_ATTACKS, STALKER_TUNING } from '@frontier/combat-math';
+import { DUAL_BLADES_MOVESET, STAFF_MOVESET, STALKER_ATTACKS, STALKER_TUNING } from '@frontier/combat-math';
 import type {
   ColossusDefinition,
   Hurtbox,
@@ -31,8 +31,8 @@ export const PLAYER_BASE_STATS: StatBlock = {
 export const FIRSTIA_TWIN_FANGS: WeaponDefinition = {
   id: 'weapon-firstia-twin-fangs',
   kind: 'weapon',
-  name: 'Firstia Twin Fangs',
-  description: 'Balanced practice blades issued at the Firstia training grounds.',
+  name: 'Bastion Twin Fangs',
+  description: 'Balanced practice blades issued at the First Bastion training grounds.',
   rarity: 'common',
   weaponClass: 'dual-blades',
   slot: 'mainHand',
@@ -43,9 +43,27 @@ export const FIRSTIA_TWIN_FANGS: WeaponDefinition = {
   sources: [{ kind: 'quest', questId: 'quest-firstia-orientation' }],
 };
 
+export const RUYI_PRACTICE_STAFF: WeaponDefinition = {
+  id: 'weapon-ruyi-practice-staff',
+  kind: 'weapon',
+  name: 'Ruyi Practice Staff',
+  description: 'Iron-shod training staff in the image of the Ruyi Jingu Bang. Long reach, heavy blows.',
+  rarity: 'common',
+  weaponClass: 'staff',
+  slot: 'mainHand',
+  occupiesOffHand: true,
+  stats: { attack: 24, defense: 4 },
+  modifiers: [],
+  movesetId: STAFF_MOVESET.id,
+  sources: [{ kind: 'quest', questId: 'quest-firstia-orientation' }],
+};
+
+/** Weapons the sandbox lets you swap between (Q / gamepad Y / pause menu). */
+export const SANDBOX_WEAPONS: readonly WeaponDefinition[] = [FIRSTIA_TWIN_FANGS, RUYI_PRACTICE_STAFF];
+
 export const TRAINING_DUMMY: MonsterDefinition = {
   id: 'monster-training-dummy',
-  name: 'Firstia Training Dummy',
+  name: 'Bastion Training Dummy',
   level: 1,
   stats: {
     maxHp: 6000,
@@ -101,7 +119,7 @@ export const PLAYER_HURTBOXES: readonly Hurtbox[] = [
 
 export const MARK_OF_THE_NIGHT_LYCAON: WorldMarkDefinition = {
   id: 'mark-night-lycaon',
-  name: 'Mark of the Night Lycaon',
+  name: 'Mark of the Moonless Hunt',
   description: 'Branded by the Shadow Stalker. Chest armor can never be worn; under the night sky, +20% agility and +20% critical rate.',
   source: { colossusId: 'shadow-stalker', outcome: 'survive' },
   modifiers: [

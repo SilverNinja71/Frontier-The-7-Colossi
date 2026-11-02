@@ -88,6 +88,7 @@ export class SceneManager {
   readonly #hemi: THREE.HemisphereLight;
   readonly #fog: THREE.Fog;
   readonly #sky: THREE.ShaderMaterial;
+  readonly #skyMesh: THREE.Mesh;
   readonly #resizeObserver: ResizeObserver;
   readonly #lightDir = new THREE.Vector3(38, 60, 22).normalize();
   readonly #sunDir = new THREE.Vector3();
@@ -110,9 +111,9 @@ export class SceneManager {
     this.renderer.domElement.className = 'block h-full w-full touch-none outline-none';
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 600);
+    this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1100);
 
-    this.#fog = new THREE.Fog(DAY.horizon.clone(), 70, 260);
+    this.#fog = new THREE.Fog(DAY.horizon.clone(), 140, 620);
     this.scene.fog = this.#fog;
 
     this.#hemi = new THREE.HemisphereLight(DAY.hemiSky.clone(), DAY.hemiGround.clone(), 1.1);
@@ -149,9 +150,10 @@ export class SceneManager {
         uMoonLit: { value: 1 },
       },
     });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), this.#sky);
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), this.#sky);
     sky.frustumCulled = false;
     sky.renderOrder = -1;
+    this.#skyMesh = sky;
     this.scene.add(sky);
 
     this.#resizeObserver = new ResizeObserver(() => this.resize());
@@ -185,8 +187,9 @@ export class SceneManager {
     u.uMoonLit!.value = moonLit;
 
     this.#fog.color.copy(u.uHorizon!.value as THREE.Color);
-    this.#fog.near = 35 + 35 * daylight;
-    this.#fog.far = 170 + 90 * daylight;
+    // Clear days show the whole frontier; nights close in.
+    this.#fog.near = 40 + 110 * daylight;
+    this.#fog.far = 220 + 400 * daylight;
 
     this.#hemi.color.copy(NIGHT.hemiSky).lerp(DAY.hemiSky, daylight);
     this.#hemi.groundColor.copy(NIGHT.hemiGround).lerp(DAY.hemiGround, daylight);
@@ -206,6 +209,16 @@ export class SceneManager {
     return daylight;
   }
 
+  /** Horizon colour of the moment (fog, water reflections). */
+  get horizonColor(): THREE.Color {
+    return this.#fog.color;
+  }
+
+  /** Direction towards the shadow-casting light (sun by day, moon by night). */
+  get lightDirection(): THREE.Vector3 {
+    return this.#lightDir;
+  }
+
   /** Keep the shadow frustum centred on the player so a small map covers the action. */
   followShadow(focus: THREE.Vector3): void {
     this.sun.target.position.copy(focus);
@@ -221,6 +234,7 @@ export class SceneManager {
   }
 
   render(): void {
+    this.#skyMesh.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
   }
 

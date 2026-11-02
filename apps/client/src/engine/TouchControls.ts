@@ -1,4 +1,5 @@
 import { InputButton } from '@frontier/shared-types';
+import { iconSvg, type IconName } from '../ui/icons.ts';
 import type { InputController } from './InputController.ts';
 
 const JOYSTICK_RADIUS = 56;
@@ -29,15 +30,18 @@ export class TouchControls {
   constructor(
     parent: HTMLElement,
     private readonly input: InputController,
-    actions: { onPause: () => void; onLock: () => void },
+    actions: { onPause: () => void; onLock: () => void; onSwap: () => void; onMap: () => void },
   ) {
     const signal = this.#abort.signal;
     this.root = el('div', 'pointer-events-auto fixed inset-0 z-10 select-none touch-none');
     this.#base = el(
       'div',
-      'pointer-events-none absolute hidden h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30 bg-white/10',
+      'pointer-events-none absolute hidden h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-200/40 bg-black/25 shadow-[inset_0_0_20px_rgba(0,0,0,0.4)] backdrop-blur-[2px]',
     );
-    this.#knob = el('div', 'absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/50');
+    this.#knob = el(
+      'div',
+      'absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-100/80 bg-[radial-gradient(circle_at_35%_30%,rgba(255,255,255,0.8),rgba(253,230,138,0.45))] shadow-[0_4px_12px_rgba(0,0,0,0.4)]',
+    );
     this.#base.appendChild(this.#knob);
     this.root.appendChild(this.#base);
 
@@ -49,24 +53,16 @@ export class TouchControls {
     const cluster = el('div', 'absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-5 flex items-end gap-3');
     const column = el('div', 'flex flex-col items-center gap-3');
     column.append(
-      this.#button('Parry', 'h-16 w-16 bg-amber-400/40', InputButton.Parry, signal),
-      this.#button('Dodge', 'h-16 w-16 bg-sky-500/40', InputButton.Dodge, signal),
+      this.#button('Parry', 'shield', 'fx-touch--parry h-16 w-16', InputButton.Parry, signal),
+      this.#button('Dodge', 'dodge', 'fx-touch--dodge h-16 w-16', InputButton.Dodge, signal),
     );
-    cluster.append(column, this.#button('Strike', 'h-24 w-24 bg-rose-500/45 text-base', InputButton.Attack, signal));
-    const sprint = this.#toggle('Sprint', 'absolute bottom-48 right-28 h-14 w-14 bg-emerald-500/35', signal);
-    const lock = el('button', 'absolute bottom-48 right-6 h-14 w-14 rounded-full border border-white/40 bg-violet-500/35 text-xs font-bold uppercase text-white');
-    lock.textContent = 'Lock';
-    lock.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      actions.onLock();
-    }, { signal });
-    const pause = el('button', 'absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-black/40 px-3 py-1 text-sm text-white');
-    pause.textContent = 'II';
-    pause.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      actions.onPause();
-    }, { signal });
-    this.root.append(cluster, sprint, lock, pause);
+    cluster.append(column, this.#button('Strike', 'swords', 'fx-touch--strike h-24 w-24 text-xs', InputButton.Attack, signal, 30));
+    const sprint = this.#toggle('Sprint', 'sprint', 'fx-touch--sprint absolute bottom-48 right-28 h-14 w-14', signal);
+    const lock = this.#action('Lock', 'lock', 'fx-touch--lock absolute bottom-48 right-6 h-14 w-14', actions.onLock, signal);
+    const swap = this.#action('Swap', 'swap', 'fx-touch--utility absolute bottom-[17rem] right-6 h-12 w-12', actions.onSwap, signal);
+    const map = this.#action('Map', 'map', 'fx-touch--utility absolute bottom-[17rem] right-28 h-12 w-12', actions.onMap, signal);
+    const pause = this.#action('', 'pause', 'fx-touch--utility absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-11 w-11', actions.onPause, signal);
+    this.root.append(cluster, sprint, lock, swap, map, pause);
     parent.appendChild(this.root);
   }
 
@@ -127,9 +123,14 @@ export class TouchControls {
     this.input.setVirtualMove(0, 0);
   }
 
-  #button(label: string, classes: string, button: number, signal: AbortSignal): HTMLButtonElement {
-    const node = el('button', `rounded-full border border-white/40 text-sm font-bold uppercase tracking-wide text-white backdrop-blur-sm active:scale-95 ${classes}`);
-    node.textContent = label;
+  #face(node: HTMLElement, label: string, icon: IconName, iconSize: number): void {
+    node.innerHTML = iconSvg(icon, iconSize);
+    if (label) node.append(Object.assign(document.createElement('span'), { textContent: label }));
+  }
+
+  #button(label: string, icon: IconName, classes: string, button: number, signal: AbortSignal, iconSize = 22): HTMLButtonElement {
+    const node = el('button', `fx-touch ${classes}`);
+    this.#face(node, label, icon, iconSize);
     node.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.input.setVirtualButton(button, true);
@@ -140,13 +141,23 @@ export class TouchControls {
     return node;
   }
 
-  #toggle(label: string, classes: string, signal: AbortSignal): HTMLButtonElement {
-    const node = el('button', `rounded-full border border-white/40 text-xs font-bold uppercase text-white ${classes}`);
-    node.textContent = label;
+  #action(label: string, icon: IconName, classes: string, run: () => void, signal: AbortSignal): HTMLButtonElement {
+    const node = el('button', `fx-touch ${classes}`);
+    this.#face(node, label, icon, 18);
+    node.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      run();
+    }, { signal });
+    return node;
+  }
+
+  #toggle(label: string, icon: IconName, classes: string, signal: AbortSignal): HTMLButtonElement {
+    const node = el('button', `fx-touch ${classes}`);
+    this.#face(node, label, icon, 18);
     node.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.#sprintToggled = !this.#sprintToggled;
-      node.classList.toggle('ring-4', this.#sprintToggled);
+      node.dataset.on = String(this.#sprintToggled);
       this.input.setVirtualButton(InputButton.Sprint, this.#sprintToggled);
     }, { signal });
     return node;

@@ -1,8 +1,12 @@
-# FRONTIER: The Seven Colossi
+# Frontier of the Colossi
 
 Web-first 3D action MMORPG — hardcore exploration, high-stakes combat, zero pay-to-win.
 This repository is the **Phase 1** foundation: monorepo, shared contracts, deterministic combat
-core, a playable training-grounds sandbox, and a CrazyGames SDK integration.
+core, a playable training-grounds sandbox inside an explorable 600 m world, a CrazyGames SDK
+integration, and the start of a native Apple client (`apps/apple`).
+
+The world, its places and its colossi are original. Post-apocalyptic fantasy: a medieval
+frontier built over the buried ruins of the Age of Ancients.
 
 ## Quick start
 
@@ -29,14 +33,17 @@ frontier-mmo/
 │   └── client/                 Vite + React 19 + three.js + Rapier3D + Zustand + Tailwind 4
 │       └── src/
 │           ├── engine/         Game loop, SceneManager (day/night), CameraRig (lock-on), InputController,
-│           │                   TouchControls, PhysicsWorld, ArenaTerrain, PlayerCharacter, PlayerRig
+│           │                   TouchControls, PhysicsWorld, Terrain (splat shader + LOD + heightfield),
+│           │                   WorldScatter, Landmarks, Water, ArenaTerrain, PlayerCharacter, PlayerRig
+│           ├── world/          Geography (pure height/biome/road/landmark math) and the map painter
 │           ├── combat/         CombatSystem, TrainingDummy, ShadowStalker, BladeTrail, HitSparks,
 │           │                   DamageNumbers
 │           ├── audio/          Procedural WebAudio SFX (no audio files)
 │           ├── platform/       PlatformService interface, CrazyGamesService, WebPlatformService
 │           ├── ui/             HUD (React) + Zustand store
 │           └── data/           Sandbox content typed against shared contracts
-│   └── asset-pipeline/         CLI that turns third-party / AI-generated glTF into web-budget kits
+│   ├── asset-pipeline/         CLI that turns third-party / AI-generated glTF into web-budget kits
+│   └── apple/                  Native client (Swift 6, SwiftUI, SceneKit) as an Xcode App Playground
 └── packages/
     ├── shared-types/           Canonical data shapes: stats, items, skills, marks, monsters,
     │                           colossi, world, network state/packets, monetization policy
@@ -84,7 +91,7 @@ hurtboxes. Weak points can be *directional*: the dummy's core only registers fro
 roll is injected from a seeded Mulberry32 RNG, and the hot path uses only operations that are
 exact across JS engines.
 
-**World marks & skill evolution** are data: e.g. *Mark of the Night Lycaon* applies
+**World marks & skill evolution** are data: e.g. *Mark of the Moonless Hunt* applies
 night-only modifiers and forbids the chest slot (`resolveStats`, `canEquipSlot`).
 *Critical Strike* evolves into *Spiral Slash* at 1,000 precision hits (`findEvolution`).
 
@@ -102,19 +109,23 @@ up to 9.5k triangles) stays out of the repo; `apps/asset-pipeline` builds the sh
 npm run nature -w @frontier/asset-pipeline -- --source "<pack>/glTF"
 ```
 
-It picks 27 models, welds and simplifies them to budget (trees ~1.2–2.7k triangles, props
-≤ 600), drops normal maps, converts textures to 256–512 px WebP, quantises and
-meshopt-compresses geometry, and writes one `nature.glb` (~1.2 MB) with a node per model.
+It picks 42 models (trees, twisted and dead trees, rocks, bushes, ferns, tall and short grass,
+clover, flowers, mushrooms, pebbles and stepping stones), welds and simplifies them to budget
+(trees ~1.2–1.8k triangles, props ≤ 600), drops normal maps, converts textures to 256–512 px
+WebP, quantises and meshopt-compresses geometry, and writes one `nature.glb` (~1.5 MB) with a
+node per model.
 The client (`NatureKit`) loads it alongside physics, scatters it deterministically as one
 `BatchedMesh` per material (per-object culling for camera and shadows), sways foliage in the
 wind, thins it on phones, and falls back to procedural props if the file fails to load.
 
-## The sandbox (Firstia Training Grounds)
+## The sandbox (Bastion Training Grounds)
 
 | Desktop          | Touch            | Action                                        |
 | ---------------- | ---------------- | --------------------------------------------- |
 | WASD + mouse     | left thumb / right drag | Move / camera (click to pointer-lock; right-drag fallback) |
-| LMB or J         | Strike           | 3-hit combo (mash or buffer)                  |
+| LMB or J         | Strike           | Combo: Twin Fangs ×3 or Ruyi Staff ×4 (mash or buffer) |
+| Q                | Swap             | Swap weapon: Twin Fangs ⇄ Ruyi Practice Staff  |
+| M                | Map              | World map: landmarks found, distances, where you are |
 | Space            | Dodge            | Roll with i-frames; no direction = backstep   |
 | RMB or L         | Parry            | Deflect at the moment of impact               |
 | Tab or MMB       | Lock             | Lock on: camera tracks, you strafe and swing at the target |
@@ -127,7 +138,13 @@ wind, thins it on phones, and falls back to procedural props if the file fails t
 | F3               | —                | Debug overlay                                 |
 
 **Gamepad** (standard mapping: Xbox, PlayStation, Switch Pro): left stick move, right stick camera,
-X / RT strike, A dodge, RB parry, B / LT (hold) sprint, R3 lock on, Start pause / menus.
+X / RT strike, A dodge, RB parry, B / LT (hold) sprint, Y swap weapon, R3 lock on, Back map,
+Start pause / menus.
+
+**The Ruyi Practice Staff** (Q) trades speed for reach: Cloud-Splitting Thrust (3.5 m poke),
+Sweeping Crescent (200° sweep), Mountain-Splitter (overhead slam) and Ruyi Whirlwind (a 360°
+spin that finishes the four-strike chain). Gold staff trails, a heavier swing sound; the choice
+is remembered.
 
 Things to try:
 - With tracking on, the dummy turns to face you at 55°/s. Dodge-roll around it to strike the
@@ -136,6 +153,42 @@ Things to try:
 - Turn on the **parry drill** (Y). The dummy swings with the Stalker's tells: its head glows gold,
   then flashes white just before impact, with random hesitations. Every attempt tells you
   **EARLY · n ms** or **LATE · n ms**, and the frame tracks your perfect-parry streak.
+
+## The Bramble Wilds (exploration)
+
+Walk out of any arena gate. The world is 768 m across with about 600 m of walkable land
+inside a ring of mountains, built from one deterministic height function
+(`apps/client/src/world/geography.ts`, pure math the server can reuse):
+
+| Landmark | Where | What is there |
+| --- | --- | --- |
+| Bastion Training Grounds | Centre | The arena; its waystone stands outside the south gate |
+| Mirror Lake | East | A wadeable lake (you slow down and leave ripples) and a plank dock |
+| Moon Isle Shrine | In the lake | A vermilion gate and an altar with peaches and a tiny golden staff |
+| Howling Ridge Lookout | North summit, ~50 m up | Broken columns, a signal pyre that burns at night, snow |
+| Windcut Arch | North-east | A road through a gorge cut into a mesa, under a natural stone bridge |
+| Fallen Colonnade | South | Rows of fallen columns on a stone terrace |
+| The Moonless Circle | West, in the Gloamwood | Nine standing stones whose runes wake at night |
+| The Elder Oak | South-east, Amber Meadow | A giant oak on a golden hill |
+
+Dirt roads lead from the four gates to every landmark. Biomes (meadow, broadleaf woods, the
+dark Gloamwood with twisted trees, pine highlands, the mesa, the golden meadow, the lake shore)
+drive both the ground colours and what grows.
+
+- **Discovery:** reaching a landmark shows a banner ("Discovered · 3/8"), plays a chime and wakes
+  its waystone. Discoveries persist in this browser.
+- **Waystones are respawn points, not teleporters.** After a fall you rise at the nearest
+  awakened waystone. There is **no fast travel**: the wilds are walked.
+- **Minimap and map:** a north-up minimap (top right) shows roads, terrain and waystones, with
+  "?" markers (pinned to the rim when far) for places not yet found; the region name and clock sit
+  beneath it. M opens the full map with every landmark, how far it is, and your progress.
+- **Ground:** 8×8 chunks with three levels of detail and crack-hiding skirts; a splat shader
+  blends grass, dirt, rock, sand and snow by slope, height, roads and biome, with procedurally
+  generated tileable detail (grass clumps, pebbles, cracked rock, rippled sand) and bump. One
+  Rapier heightfield is the collision. Small props (grass, flowers, ferns) are only drawn near
+  the player; trees and rocks are batched per material.
+- **The Shadow Stalker hunts you anywhere.** Out in the wilds it rises where you are looking
+  and fights on slopes (its attacks and tells follow the terrain height).
 
 ## The Shadow Stalker (Unique Colossus #1)
 
@@ -167,7 +220,7 @@ It is meant to be **brutal**. Expect to lose many nights before you subdue it.
 - **No mercy:** no health regeneration while it hunts, late parries only halve damage, and each
   time it kills you it regains 35% of its Resolve.
 - **Subdue it, or survive the whole night without dying once**, to earn the permanent
-  **Mark of the Night Lycaon**: violet brands on your character, chest armor forbidden, +20%
+  **Mark of the Moonless Hunt**: violet brands on your character, chest armor forbidden, +20%
   agility and +20% crit at night. It is saved in this browser for the sandbox (server-side in
   Phase 2). A win also calls CrazyGames `happytime()`.
 
@@ -223,12 +276,15 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Verification
 
-- `npm run check`: typecheck, 50 unit tests (motor, dodge distance/i-frames, combo/cancel,
+- `npm run check`: typecheck, 63 unit tests (motor, dodge distance/i-frames, combo/cancel,
   parry windows/frontal arc/guard break, lock-on strafing, stamina exhaustion, hit registration
   incl. directional weak points, damage, marks, skill evolution, world clock and moon phases,
   simulated Shadow Stalker fights (a perfect-parry bot subdues it, a passive one never exposes
   it, dawn dissolves it, seeds are deterministic), its difficulty envelope, hesitating
-  windups, per-attack deflect windows, Eclipse and feeding, Tail Lash, parry-spam wariness, SDK wrapper lifecycle/policy/errors/
+  windups, per-attack deflect windows, Eclipse and feeding, Tail Lash, parry-spam wariness, the
+  Stalker striking from terrain height, the staff moveset, world geography (level arena floor,
+  wadeable lake and isle, mountain ring, roads levelling the ground, Rapier heightfield layout),
+  SDK wrapper lifecycle/policy/errors/
   throttling/timeouts), and the production build.
 - The production build was driven in headless Chromium: combo hits and the DPS meter, a
   precision core crit from behind, the slam drill (150 damage + stagger) and a perfect dodge
@@ -239,7 +295,18 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
   ring, its full attack cycle (pounce, howl, lunge, claw combo), respawn grace, and the mark
   panel/tattoo after a reload. Later: the parry drill's EARLY/LATE feedback, a stubbed gamepad
   (stick movement, strike, lock-on, Start to pause), the YOU FELL overlay, fleeing to dawn and
-  the Hunt Report. No console errors.
+  the Hunt Report. Later still: the staff combo, a tour of every landmark, discovery banners,
+  the minimap, the world map and the restyled menus. No console errors.
+
+## Native Apple client (early)
+
+`apps/apple/Frontier.swiftpm` is an Xcode App Playground (Swift 6, SwiftUI, SceneKit): double-click
+it on a Mac, or open it in Swift Playgrounds on an iPad. It has the Azure Chamber character creator
+(name and appearance, 8 origins, 8 jobs with advancement paths, a turning 3D preview on a glass
+dais in a cobalt void), a deterministic 60 Hz `CharacterController` (camera-relative movement,
+dodge i-frames, a 12-frame parry window with slow motion) and a proving ground to try it. See
+[apps/apple/README.md](apps/apple/README.md). It has not been compiled yet: there is no Swift
+toolchain in the environment it was written in.
 
 ## Phase 2 candidates
 

@@ -5,7 +5,7 @@ import type { StatModifier } from './stats.ts';
 export type WorldMarkId = string;
 
 /**
- * A permanent curse/blessing left by a Unique Colossus, e.g. "Mark of the Night Lycaon":
+ * A permanent curse/blessing left by a Unique Colossus, e.g. "Mark of the Moonless Hunt":
  * chest armor forbidden, +agility and crit at night. Marks are never removable.
  */
 export interface WorldMarkDefinition {

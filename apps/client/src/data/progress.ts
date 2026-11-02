@@ -60,3 +60,41 @@ export function saveRecords(records: HuntRecords): void {
     // Storage blocked: records last this session.
   }
 }
+
+const WEAPON_KEY = 'frontier.sandbox.weapon';
+
+export function loadWeaponId(): string | null {
+  try {
+    return localStorage.getItem(WEAPON_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveWeaponId(id: string): void {
+  try {
+    localStorage.setItem(WEAPON_KEY, id);
+  } catch {
+    // Storage blocked: the choice lasts this session.
+  }
+}
+
+const DISCOVERED_KEY = 'frontier.sandbox.discovered';
+
+/** Landmarks this browser has discovered (their waystones are attuned). */
+export function loadDiscovered(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(DISCOVERED_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDiscovered(ids: readonly string[]): void {
+  try {
+    localStorage.setItem(DISCOVERED_KEY, JSON.stringify(ids));
+  } catch {
+    // Storage blocked: discoveries last this session.
+  }
+}
