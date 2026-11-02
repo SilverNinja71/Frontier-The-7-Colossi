@@ -8,5 +8,5 @@
     // erasable-only syntax so the server can run them via Bun/Node type stripping.
     "erasableSyntaxOnly": false
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src"]
 }

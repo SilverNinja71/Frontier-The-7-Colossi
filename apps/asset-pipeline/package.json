@@ -6,14 +6,18 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "nature": "node --experimental-strip-types --no-warnings src/build-nature.ts"
+    "test": "vitest run",
+    "nature": "node --experimental-strip-types --no-warnings src/build-nature.ts",
+    "statue": "node --experimental-strip-types --no-warnings src/build-statue.ts"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
     "@types/node": "^22.10.0",
+    "fflate": "^0.8.3",
     "meshoptimizer": "^1.3.0",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "vitest": "^5.0.5"
   }
 }

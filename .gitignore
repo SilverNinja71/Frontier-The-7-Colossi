@@ -5,3 +5,7 @@ coverage/
 *.log
 .DS_Store
 .env*.local
+
+# Personal-use models (served by the dev server only; never committed or built)
+apps/client/private-assets/*
+!apps/client/private-assets/README.md
