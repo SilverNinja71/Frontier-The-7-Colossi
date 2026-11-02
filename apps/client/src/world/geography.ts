@@ -87,7 +87,7 @@ export const LANDMARKS: readonly Landmark[] = [
   {
     id: 'moon-isle',
     name: 'Moon Isle Shrine',
-    blurb: 'Wade out. Someone left offerings for a monkey king.',
+    blurb: 'Wade out. Someone still leaves offerings here.',
     x: ISLE.x,
     z: ISLE.z,
     radius: 12,

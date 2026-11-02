@@ -29,12 +29,14 @@ export interface CharacterSkin {
  * Personal-use characters live in the git-ignored apps/client/private-assets folder and are
  * served by the dev server only. Production builds compile this to `null` and never ask.
  */
-export async function loadPrivateSkin(name: string): Promise<CharacterSkin | null> {
+export async function loadPrivateSkin(): Promise<CharacterSkin | null> {
   if (!import.meta.env.DEV) return null;
+  let name = '';
   try {
     const manifest = (await fetch('/private-assets/manifest.json').then((r) => (r.ok ? r.json() : null))) as { models?: string[] } | null;
-    const file = `${name}.rig.glb`;
-    if (!manifest?.models?.includes(file)) return null;
+    const file = manifest?.models?.find((m) => m.endsWith('.rig.glb'));
+    if (!file) return null;
+    name = file.slice(0, -'.rig.glb'.length);
     const gltf = await new GLTFLoader().loadAsync(`/private-assets/${file}`);
     const rig = gltf.scene.userData.rig as SkinRig | undefined;
     if (!rig) return null;

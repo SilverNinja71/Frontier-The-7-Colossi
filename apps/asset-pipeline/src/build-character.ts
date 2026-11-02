@@ -4,7 +4,7 @@
  * display base, straightens each limb into the rig's standing pose (blending across elbows and
  * knees so the bends stay smooth), scales it to the rig and writes a private .glb.
  *
- *   npm run character -w @frontier/asset-pipeline -- --input wukong.glb --rig rigs/wukong.json --name wukong
+ *   npm run character -w @frontier/asset-pipeline -- --input hero.glb --rig hero.rig.json --name hero
  *
  * Output: apps/client/private-assets/<name>.rig.glb (git-ignored; served by the dev server only).
  */
@@ -26,7 +26,7 @@ const { values } = parseArgs({
   },
 });
 if (!values.input || !values.rig) {
-  console.error('Usage: --input <model.glb|.stl|.3mf> --rig <rig.json> [--name wukong]');
+  console.error('Usage: --input <model.glb|.stl|.3mf> --rig <rig.json> [--name hero]');
   process.exit(1);
 }
 

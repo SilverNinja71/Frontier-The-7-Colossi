@@ -197,7 +197,7 @@ function ControlsGrid({ touch }: { touch: boolean }) {
         [['Strike'], 'Combo'],
         [['Dodge'], 'Roll with i-frames'],
         [['Parry'], 'Deflect at the moment of impact'],
-        [['Swap'], 'Twin Fangs ⇄ Ruyi Staff'],
+        [['Swap'], 'Twin Fangs ⇄ Ironwood Staff'],
         [['Map'], 'World map & discoveries'],
       ]
     : [
@@ -206,7 +206,7 @@ function ControlsGrid({ touch }: { touch: boolean }) {
         [['LMB', 'J'], 'Strike combo'],
         [['Space'], 'Dodge roll (i-frames)'],
         [['RMB', 'L'], 'Parry: deflect at the moment of impact'],
-        [['Q'], 'Swap weapon: Twin Fangs ⇄ Ruyi Staff'],
+        [['Q'], 'Swap weapon: Twin Fangs ⇄ Ironwood Staff'],
         [['Tab'], 'Lock on'],
         [['Shift'], 'Sprint'],
         [['M'], 'World map & discoveries'],
@@ -285,7 +285,7 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
             Wielding <span className="font-semibold text-amber-100">{weapon.name}</span> · {weapon.moves.join(' → ')}
           </div>
           {skin.available && (
-            <Toggle label="Sun Wukong (private model)" on={skin.active} onClick={() => commands?.toggleSkin()} />
+            <Toggle label={`Custom character: ${skin.name}`} on={skin.active} onClick={() => commands?.toggleSkin()} />
           )}
 
           <SectionTitle>Training</SectionTitle>

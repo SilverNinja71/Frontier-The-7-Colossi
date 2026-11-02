@@ -43,11 +43,11 @@ export const FIRSTIA_TWIN_FANGS: WeaponDefinition = {
   sources: [{ kind: 'quest', questId: 'quest-firstia-orientation' }],
 };
 
-export const RUYI_PRACTICE_STAFF: WeaponDefinition = {
-  id: 'weapon-ruyi-practice-staff',
+export const IRONWOOD_STAFF: WeaponDefinition = {
+  id: 'weapon-ironwood-staff',
   kind: 'weapon',
-  name: 'Ruyi Practice Staff',
-  description: 'Iron-shod training staff in the image of the Ruyi Jingu Bang. Long reach, heavy blows.',
+  name: 'Ironwood Quarterstaff',
+  description: 'Iron-shod ironwood training staff from the Bastion armoury. Long reach, heavy blows.',
   rarity: 'common',
   weaponClass: 'staff',
   slot: 'mainHand',
@@ -59,7 +59,7 @@ export const RUYI_PRACTICE_STAFF: WeaponDefinition = {
 };
 
 /** Weapons the sandbox lets you swap between (Q / gamepad Y / pause menu). */
-export const SANDBOX_WEAPONS: readonly WeaponDefinition[] = [FIRSTIA_TWIN_FANGS, RUYI_PRACTICE_STAFF];
+export const SANDBOX_WEAPONS: readonly WeaponDefinition[] = [FIRSTIA_TWIN_FANGS, IRONWOOD_STAFF];
 
 export const TRAINING_DUMMY: MonsterDefinition = {
   id: 'monster-training-dummy',

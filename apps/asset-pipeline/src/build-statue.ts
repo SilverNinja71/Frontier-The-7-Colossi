@@ -2,7 +2,7 @@
  * Converts a 3D-print model (or any .glb/.gltf) into a statue for the client's private,
  * git-ignored asset slot. Files there are only served by the local dev server.
  *
- *   npm run statue -w @frontier/asset-pipeline -- --input ~/Downloads/wukong.3mf
+ *   npm run statue -w @frontier/asset-pipeline -- --input ~/Downloads/statue.3mf
  *
  * Options: --name (default: input file name), --height metres (3.4), --triangles (40000),
  * --up z|y (z for print files), --yaw degrees (turn it if it faces the wrong way),

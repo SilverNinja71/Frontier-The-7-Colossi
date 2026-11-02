@@ -176,7 +176,7 @@ export class Landmarks {
     dock.remove(collider);
   }
 
-  /** A vermilion gate and an altar on Moon Isle (with offerings for a certain monkey king). */
+  /** A vermilion gate, an altar with an offering bowl and candles, and stone lanterns on Moon Isle. */
   #buildIsleShrine(): void {
     const x = ISLE.x;
     const z = ISLE.z;
@@ -193,18 +193,12 @@ export class Landmarks {
     kasagi.rotation.z = 0;
     this.#mesh(new THREE.BoxGeometry(5.0, 0.24, 0.4), this.#lacquer, 0, 4.05, 3, shrine);
     this.#mesh(new THREE.BoxGeometry(4.2, 0.2, 0.26), this.#lacquer, 0, 3.4, 3, shrine);
-    // Altar with peaches and a little golden staff.
+    // Altar with a bronze offering bowl and two candles that glow at night.
     const altar = this.#mesh(new THREE.BoxGeometry(1.8, 0.9, 1.0), this.#stone, 0, 0.45, -0.6, shrine);
-    const peach = new THREE.MeshStandardMaterial({ color: '#f29a7a', emissive: '#ff8060', emissiveIntensity: 0.08, roughness: 0.6 });
-    for (const [px, pz] of [
-      [-0.3, -0.55],
-      [0.05, -0.75],
-      [0.32, -0.5],
-    ] as const) {
-      this.#mesh(new THREE.SphereGeometry(0.14, 10, 8), peach, px, 1.02, pz, shrine);
-    }
-    const staff = this.#mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 8), this.#gold, 0, 0.94, -0.35, shrine);
-    staff.rotation.z = Math.PI / 2;
+    this.#mesh(new THREE.CylinderGeometry(0.26, 0.16, 0.14, 12), this.#gold, 0, 0.97, -0.6, shrine);
+    const wax = new THREE.MeshStandardMaterial({ color: '#efe6d2', emissive: '#ffcf7a', emissiveIntensity: 0.15, roughness: 0.7 });
+    this.#nightGlow.push(wax);
+    for (const side of [-0.6, 0.6]) this.#mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 8), wax, side, 1.01, -0.55, shrine);
     // Stone lanterns.
     for (const side of [-1.6, 1.6]) {
       this.#mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.1, 6), this.#stone, side, 0.55, -1.6, shrine);

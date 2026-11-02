@@ -85,14 +85,14 @@ export const DUAL_BLADES_MOVESET: Moveset = {
 };
 
 /**
- * Ruyi Jingu Bang: Sun Wukong's staff. Slower and four strikes long, but longer reach,
+ * Ironwood quarterstaff. Slower and four strikes long, but longer reach,
  * wider sweeps and heavier motion values than the dual blades.
  */
 export const STAFF_MOVESET: Moveset = {
-  id: 'ruyi-staff',
+  id: 'quarterstaff',
   steps: [
     {
-      id: 'ruyi-thrust',
+      id: 'staff-thrust',
       name: 'Cloud-Splitting Thrust',
       windupTicks: 5,
       activeTicks: 3,
@@ -107,7 +107,7 @@ export const STAFF_MOVESET: Moveset = {
       impact: 0.8,
     },
     {
-      id: 'ruyi-sweep',
+      id: 'staff-sweep',
       name: 'Sweeping Crescent',
       windupTicks: 6,
       activeTicks: 4,
@@ -122,7 +122,7 @@ export const STAFF_MOVESET: Moveset = {
       impact: 1.0,
     },
     {
-      id: 'ruyi-smash',
+      id: 'staff-smash',
       name: 'Mountain-Splitter',
       windupTicks: 9,
       activeTicks: 4,
@@ -137,8 +137,8 @@ export const STAFF_MOVESET: Moveset = {
       impact: 1.8,
     },
     {
-      id: 'ruyi-whirlwind',
-      name: 'Ruyi Whirlwind',
+      id: 'staff-whirlwind',
+      name: 'Gale Whirlwind',
       windupTicks: 6,
       activeTicks: 7,
       recoveryTicks: 16,

@@ -125,17 +125,18 @@ turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character f
 rig: it cuts the mesh into torso and head, arms, legs and weapon by nearest bone, fits the
 weapon's axis, removes the base, straightens elbows and knees into a standing pose (blending
 across the joint so bends stay smooth, feet kept level), and scales it so the soles meet the
-ground. A small rig file per model holds the joint positions (`rigs/wukong.json`). The output
-goes to the git-ignored `apps/client/private-assets/`; the dev server serves it, the game wears
-it automatically (a pause-menu toggle switches back), and builds never include it.
+ground. A small rig file per model holds the joint positions (format: `RigSpec` in
+`apps/asset-pipeline/src/character.ts`). The output
+goes to the git-ignored `apps/client/private-assets/`; the dev server serves it, a pause-menu
+toggle puts it on (off by default), and builds never include it.
 
 ## The sandbox (Bastion Training Grounds)
 
 | Desktop          | Touch            | Action                                        |
 | ---------------- | ---------------- | --------------------------------------------- |
 | WASD + mouse     | left thumb / right drag | Move / camera (click to pointer-lock; right-drag fallback) |
-| LMB or J         | Strike           | Combo: Twin Fangs ×3 or Ruyi Staff ×4 (mash or buffer) |
-| Q                | Swap             | Swap weapon: Twin Fangs ⇄ Ruyi Practice Staff  |
+| LMB or J         | Strike           | Combo: Twin Fangs ×3 or Ironwood Staff ×4 (mash or buffer) |
+| Q                | Swap             | Swap weapon: Twin Fangs ⇄ Ironwood Quarterstaff |
 | M                | Map              | World map: landmarks found, distances, where you are |
 | Space            | Dodge            | Roll with i-frames; no direction = backstep   |
 | RMB or L         | Parry            | Deflect at the moment of impact               |
@@ -152,8 +153,8 @@ it automatically (a pause-menu toggle switches back), and builds never include i
 X / RT strike, A dodge, RB parry, B / LT (hold) sprint, Y swap weapon, R3 lock on, Back map,
 Start pause / menus.
 
-**The Ruyi Practice Staff** (Q) trades speed for reach: Cloud-Splitting Thrust (3.5 m poke),
-Sweeping Crescent (200° sweep), Mountain-Splitter (overhead slam) and Ruyi Whirlwind (a 360°
+**The Ironwood Quarterstaff** (Q) trades speed for reach: Cloud-Splitting Thrust (3.5 m poke),
+Sweeping Crescent (200° sweep), Mountain-Splitter (overhead slam) and Gale Whirlwind (a 360°
 spin that finishes the four-strike chain). Gold staff trails, a heavier swing sound; the choice
 is remembered.
 
@@ -175,7 +176,7 @@ inside a ring of mountains, built from one deterministic height function
 | --- | --- | --- |
 | Bastion Training Grounds | Centre | The arena; its waystone stands outside the south gate |
 | Mirror Lake | East | A wadeable lake (you slow down and leave ripples) and a plank dock |
-| Moon Isle Shrine | In the lake | A vermilion gate and an altar with peaches and a tiny golden staff |
+| Moon Isle Shrine | In the lake | A vermilion gate, an altar with an offering bowl and candles, stone lanterns |
 | Howling Ridge Lookout | North summit, ~50 m up | Broken columns, a signal pyre that burns at night, snow |
 | Windcut Arch | North-east | A road through a gorge cut into a mesa, under a natural stone bridge |
 | Fallen Colonnade | South | Rows of fallen columns on a stone terrace |

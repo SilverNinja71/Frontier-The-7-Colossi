@@ -223,7 +223,7 @@ export class Game implements GameCommands {
     const [rapier, kit, skin] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
-      loadPrivateSkin('wukong'),
+      loadPrivateSkin(),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -273,7 +273,6 @@ export class Game implements GameCommands {
 
     this.#rig = new PlayerRig();
     this.#rig.setWeapon(this.#weapon.weaponClass === 'staff' ? 'staff' : 'blades');
-    if (skin) this.#rig.applySkin(skin);
     this.#bladeTrails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
     this.#staffTrails = this.#rig.staffAnchors.map((a) => new BladeTrail(a.base, a.tip, '#ffd77a'));
     const trailMeshes = [...this.#bladeTrails, ...this.#staffTrails].map((t) => t.mesh);
@@ -319,7 +318,6 @@ export class Game implements GameCommands {
       records: this.#records,
       skill: { name: CRITICAL_STRIKE.name, level: 1, precisionHits: 0, goal: 1000, evolvesInto: 'Spiral Slash' },
     });
-    if (skin && this.#weapon.weaponClass !== 'staff') this.#equip(SANDBOX_WEAPONS.find((w) => w.weaponClass === 'staff') ?? this.#weapon);
     this.#syncHud();
     this.#loop.start();
     setTimeout(() => this.#paintMap(), 0);
@@ -366,7 +364,7 @@ export class Game implements GameCommands {
     this.#syncHud();
   }
 
-  /** Swap between the Twin Fangs and the Ruyi staff (only while not mid-move). */
+  /** Swap between the Twin Fangs and the Ironwood staff (only while not mid-move). */
   swapWeapon(): void {
     if (this.#player.motor.action !== CharacterAction.Free) {
       pushToast('Finish your move first', 'info');
@@ -403,7 +401,7 @@ export class Game implements GameCommands {
     pushToast('You flee until dawn…', 'info');
   }
 
-  /** Private character model on / off (dev only; see apps/client/private-assets). */
+  /** Private custom character on / off (dev only; see apps/client/private-assets). */
   toggleSkin(): void {
     if (!this.skin) return;
     if (this.#rig.skinName) {
@@ -411,7 +409,7 @@ export class Game implements GameCommands {
       pushToast('Back to the hunter', 'info');
     } else {
       this.#rig.applySkin(this.skin);
-      pushToast('Sun Wukong takes the field', 'gold');
+      pushToast(`Playing as ${this.skin.name}`, 'gold');
     }
     this.#syncHud();
   }
@@ -1167,7 +1165,7 @@ export class Game implements GameCommands {
       },
       clock: { period: this.#period, moon: moonPhaseAt(this.#worldTime), night: 1 - this.#daylight },
       weapon: { name: this.#weapon.name, moves: this.#motorContext.moveset.steps.map((step) => step.name) },
-      skin: { available: this.skin !== null, active: this.#rig.skinName !== null },
+      skin: { available: this.skin !== null, active: this.#rig.skinName !== null, name: this.skin?.name ?? '' },
       explore: {
         mapUrl: this.#mapUrl,
         x: pose.x,

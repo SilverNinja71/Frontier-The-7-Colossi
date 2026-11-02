@@ -164,7 +164,7 @@ export class PlayerRig {
       this.#hips.add(hip);
     }
 
-    // Ruyi Jingu Bang: dark iron shaft, gold caps; gripped a third of the way up.
+    // Ironwood quarterstaff: dark iron-shod shaft, gold caps; gripped a third of the way up.
     const iron = new THREE.MeshStandardMaterial({ color: '#2f2f36', metalness: 0.7, roughness: 0.35 });
     this.#staffGold = new THREE.MeshStandardMaterial({
       color: '#e0b040',
@@ -459,7 +459,7 @@ export class PlayerRig {
     if (this.#weapon === 'staff' && !sprinting) target.right = { pitch: 0.55 - swing * 0.2 * runAmount, yaw: -0.35, roll: 0.15 };
   }
 
-  /** Ruyi staff strikes; returns the body spin angle (whirlwind). */
+  /** Quarterstaff strikes; returns the body spin angle (whirlwind). */
   #staffAttackPose(target: Pose, step: AttackStep, tick: number): number {
     const windEnd = step.windupTicks;
     const activeEnd = windEnd + step.activeTicks;
@@ -478,23 +478,23 @@ export class PlayerRig {
 
     let spin = 0;
     switch (step.id) {
-      case 'ruyi-thrust':
+      case 'staff-thrust':
         target.right = strike({ pitch: 1.2, yaw: -0.3, roll: 0.1 }, { pitch: 1.57, yaw: 0, roll: 0 });
         target.lean = settle(0.15, -0.3);
         target.twist = settle(-0.3, 0.2);
         break;
-      case 'ruyi-sweep':
+      case 'staff-sweep':
         target.right = strike({ pitch: 1.45, yaw: -2.0, roll: 0.2 }, { pitch: 1.4, yaw: 1.6, roll: -0.1 });
         target.twist = settle(-0.5, 0.6);
         target.lean = -0.1;
         break;
-      case 'ruyi-smash':
+      case 'staff-smash':
         target.right = strike({ pitch: 2.9, yaw: -0.1, roll: 0 }, { pitch: 1.0, yaw: 0, roll: 0 });
         target.lean = settle(0.2, -0.35);
         target.crouch = settle(0, -0.15);
         break;
       default: {
-        // Ruyi Whirlwind: staff held out to the side, two full turns.
+        // Gale Whirlwind: staff held out to the side, two full turns.
         target.right = strike({ pitch: 1.5, yaw: -1.5, roll: 0 }, { pitch: 1.5, yaw: -1.5, roll: 0 });
         target.crouch = -0.18 * windup * (1 - recovery);
         spin = tick < windEnd ? 0.5 * windup : tick < activeEnd ? 0.5 - (Math.PI * 4 + 0.5) * active : 0;

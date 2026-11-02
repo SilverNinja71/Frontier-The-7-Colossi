@@ -134,8 +134,8 @@ export interface HudState {
   lockOn: boolean;
   explore: ExploreHud;
   mapOpen: boolean;
-  /** Private character model (dev server only). */
-  skin: { available: boolean; active: boolean };
+  /** A private custom character model, if one exists (dev server only; off by default). */
+  skin: { available: boolean; active: boolean; name: string };
   /** Equipped weapon and its combo, in order. */
   weapon: { name: string; moves: string[] };
   /** Shown while dead; `fed` = Resolve the Stalker regained from the fall. */
@@ -192,7 +192,7 @@ export const useHud = create<HudState>()(() => ({
   weapon: { name: '', moves: [] },
   explore: { mapUrl: null, x: 0, z: 0, facing: 0, cameraYaw: 0, discovered: [], region: '' },
   mapOpen: false,
-  skin: { available: false, active: false },
+  skin: { available: false, active: false, name: '' },
   fallen: null,
   report: null,
   records: EMPTY_RECORDS,
