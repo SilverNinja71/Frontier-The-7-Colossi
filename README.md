@@ -120,6 +120,15 @@ The client (`NatureKit`) loads it alongside physics, scatters it deterministical
 `BatchedMesh` per material (per-object culling for camera and shadows), sways foliage in the
 wind, thins it on phones, and falls back to procedural props if the file fails to load.
 
+**Characters from statues (private, personal use).** `npm run character -w @frontier/asset-pipeline`
+turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character for the player
+rig: it cuts the mesh into torso and head, arms, legs and weapon by nearest bone, fits the
+weapon's axis, removes the base, straightens elbows and knees into a standing pose (blending
+across the joint so bends stay smooth, feet kept level), and scales it so the soles meet the
+ground. A small rig file per model holds the joint positions (`rigs/wukong.json`). The output
+goes to the git-ignored `apps/client/private-assets/`; the dev server serves it, the game wears
+it automatically (a pause-menu toggle switches back), and builds never include it.
+
 ## The sandbox (Bastion Training Grounds)
 
 | Desktop          | Touch            | Action                                        |

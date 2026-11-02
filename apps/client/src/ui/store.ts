@@ -29,6 +29,7 @@ export interface GameCommands {
   fleeToDawn(): void;
   openMap(): void;
   closeMap(): void;
+  toggleSkin(): void;
 }
 
 export interface ExploreHud {
@@ -133,6 +134,8 @@ export interface HudState {
   lockOn: boolean;
   explore: ExploreHud;
   mapOpen: boolean;
+  /** Private character model (dev server only). */
+  skin: { available: boolean; active: boolean };
   /** Equipped weapon and its combo, in order. */
   weapon: { name: string; moves: string[] };
   /** Shown while dead; `fed` = Resolve the Stalker regained from the fall. */
@@ -189,6 +192,7 @@ export const useHud = create<HudState>()(() => ({
   weapon: { name: '', moves: [] },
   explore: { mapUrl: null, x: 0, z: 0, facing: 0, cameraYaw: 0, discovered: [], region: '' },
   mapOpen: false,
+  skin: { available: false, active: false },
   fallen: null,
   report: null,
   records: EMPTY_RECORDS,

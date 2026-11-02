@@ -81,6 +81,7 @@ import {
 import { renderMapPixels } from '../world/map-image.ts';
 import { ArenaTerrain } from './ArenaTerrain.ts';
 import { CameraRig } from './CameraRig.ts';
+import { loadPrivateSkin, type CharacterSkin } from './CharacterSkin.ts';
 import { GameEvents } from './events.ts';
 import { FixedStepLoop } from './FixedStepLoop.ts';
 import { InputController } from './InputController.ts';
@@ -219,13 +220,17 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit] = await Promise.all([loadRapier(), NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`)]);
+    const [rapier, kit, skin] = await Promise.all([
+      loadRapier(),
+      NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
+      loadPrivateSkin('wukong'),
+    ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin);
   }
 
   private constructor(
@@ -235,6 +240,7 @@ export class Game implements GameCommands {
     rapier: Rapier,
     private readonly kit: NatureKit | null,
     private readonly grid: HeightGrid,
+    private readonly skin: CharacterSkin | null = null,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
@@ -267,6 +273,7 @@ export class Game implements GameCommands {
 
     this.#rig = new PlayerRig();
     this.#rig.setWeapon(this.#weapon.weaponClass === 'staff' ? 'staff' : 'blades');
+    if (skin) this.#rig.applySkin(skin);
     this.#bladeTrails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
     this.#staffTrails = this.#rig.staffAnchors.map((a) => new BladeTrail(a.base, a.tip, '#ffd77a'));
     const trailMeshes = [...this.#bladeTrails, ...this.#staffTrails].map((t) => t.mesh);
@@ -312,6 +319,7 @@ export class Game implements GameCommands {
       records: this.#records,
       skill: { name: CRITICAL_STRIKE.name, level: 1, precisionHits: 0, goal: 1000, evolvesInto: 'Spiral Slash' },
     });
+    if (skin && this.#weapon.weaponClass !== 'staff') this.#equip(SANDBOX_WEAPONS.find((w) => w.weaponClass === 'staff') ?? this.#weapon);
     this.#syncHud();
     this.#loop.start();
     setTimeout(() => this.#paintMap(), 0);
@@ -393,6 +401,19 @@ export class Game implements GameCommands {
     this.#fledTonight = true;
     this.#worldTime = nightIndexAt(this.#worldTime) + DAY_PERIODS.dawn + 0.001;
     pushToast('You flee until dawn…', 'info');
+  }
+
+  /** Private character model on / off (dev only; see apps/client/private-assets). */
+  toggleSkin(): void {
+    if (!this.skin) return;
+    if (this.#rig.skinName) {
+      this.#rig.removeSkin();
+      pushToast('Back to the hunter', 'info');
+    } else {
+      this.#rig.applySkin(this.skin);
+      pushToast('Sun Wukong takes the field', 'gold');
+    }
+    this.#syncHud();
   }
 
   openMap(): void {
@@ -1146,6 +1167,7 @@ export class Game implements GameCommands {
       },
       clock: { period: this.#period, moon: moonPhaseAt(this.#worldTime), night: 1 - this.#daylight },
       weapon: { name: this.#weapon.name, moves: this.#motorContext.moveset.steps.map((step) => step.name) },
+      skin: { available: this.skin !== null, active: this.#rig.skinName !== null },
       explore: {
         mapUrl: this.#mapUrl,
         x: pose.x,

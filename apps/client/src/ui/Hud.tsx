@@ -239,6 +239,7 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
   const doubloons = useHud((s) => s.doubloons);
   const weapon = useHud((s) => s.weapon);
   const discovered = useHud((s) => s.explore.discovered.length);
+  const skin = useHud((s) => s.skin);
   const [adMessage, setAdMessage] = useState<string | null>(null);
   const [adPending, setAdPending] = useState(false);
   const canReward = platform.canShowRewarded('cosmetic-doubloons');
@@ -283,6 +284,9 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
           <div className="text-center text-[11px] text-white/55">
             Wielding <span className="font-semibold text-amber-100">{weapon.name}</span> · {weapon.moves.join(' → ')}
           </div>
+          {skin.available && (
+            <Toggle label="Sun Wukong (private model)" on={skin.active} onClick={() => commands?.toggleSkin()} />
+          )}
 
           <SectionTitle>Training</SectionTitle>
           <div className="grid grid-cols-2 gap-2">

@@ -1,6 +1,7 @@
 import { attackStepTotalTicks, type AttackStep, type MotorState, type MotorTuning, type Moveset } from '@frontier/combat-math';
 import { CharacterAction } from '@frontier/shared-types';
 import * as THREE from 'three';
+import type { CharacterSkin, SkinPart } from './CharacterSkin.ts';
 
 /**
  * Procedurally animated stand-in for the glTF player model (the asset pipeline replaces the
@@ -46,6 +47,10 @@ export class PlayerRig {
   readonly staffAnchors: { base: THREE.Object3D; tip: THREE.Object3D }[] = [];
   #weapon: WeaponKind = 'blades';
   readonly #blades: THREE.Mesh[] = [];
+  readonly #hands: THREE.Group[] = [];
+  /** Applied character skin: its meshes, and the stand-in meshes it hid. */
+  #skin: { name: string; meshes: THREE.Mesh[]; hidden: THREE.Object3D[]; staffMaterial: THREE.MeshStandardMaterial } | null = null;
+  #restJoints: THREE.Vector3[] = [];
   readonly #staff = new THREE.Group();
   readonly #staffGold: THREE.MeshStandardMaterial;
 
@@ -133,6 +138,7 @@ export class PlayerRig {
       const hand = new THREE.Group();
       hand.position.y = -0.56;
       shoulder.add(hand);
+      this.#hands.push(hand);
       hand.add(mesh(new THREE.BoxGeometry(0.16, 0.035, 0.05), dark, 0, -0.02, 0));
       const blade = mesh(new THREE.BoxGeometry(0.035, 0.8, 0.012), this.#bladeMaterial, 0, -0.43, 0);
       hand.add(blade);
@@ -201,13 +207,84 @@ export class PlayerRig {
 
   /** Mark of the Moonless Hunt: violet brands on the bare torso and arms that flare at night. */
   setMark(owned: boolean, night: number): void {
-    this.#tattoo.visible = owned;
+    const show = owned && !this.#skin; // armoured skins hide the brands
+    this.#tattoo.visible = show;
     for (const shoulder of [this.#shoulderR, this.#shoulderL]) {
-      for (const child of shoulder.children) if (child.userData.tattoo) child.visible = owned;
+      for (const child of shoulder.children) if (child.userData.tattoo) child.visible = show;
     }
     // Unlit brand: a dim violet by day, glowing (but never clipping to white) at night.
     const k = 0.3 + 0.55 * night;
     this.#tattooMaterial.color.setRGB(0.55 * k, 0.38 * k, 1.0 * k);
+  }
+
+  get skinName(): string | null {
+    return this.#skin?.name ?? null;
+  }
+
+  /**
+   * Swap the stand-in body for a rigid-part character (see CharacterSkin): hide the
+   * procedural meshes, move the joints to the model's proportions and attach its parts.
+   */
+  applySkin(skin: CharacterSkin): void {
+    this.removeSkin();
+    const joints = [this.#shoulderR, this.#shoulderL, this.#hipR, this.#hipL, ...this.#hands];
+    this.#restJoints = joints.map((j) => j.position.clone());
+
+    const hidden: THREE.Object3D[] = [];
+    this.root.traverse((object) => {
+      if (object instanceof THREE.Mesh && !this.#blades.includes(object) && object.visible) hidden.push(object);
+    });
+    for (const object of hidden) object.visible = false;
+
+    const { rig } = skin;
+    this.#shoulderR.position.set(...rig.shoulderR);
+    this.#shoulderL.position.set(...rig.shoulderL);
+    this.#hipR.position.set(...rig.hipR);
+    this.#hipL.position.set(...rig.hipL);
+    this.#hands[0]!.position.set(...rig.handR);
+    this.#hands[1]!.position.set(...rig.handL);
+
+    // A living bronze statue: the print model has no colours of its own.
+    const bronze = new THREE.MeshStandardMaterial({ color: '#b48c55', metalness: 0.3, roughness: 0.5 });
+    this.#glowMaterials.push(bronze);
+    const staffMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      metalness: 0.6,
+      roughness: 0.35,
+      emissive: '#ffcf5a',
+      emissiveIntensity: 0,
+    });
+    const parents: Record<SkinPart, THREE.Object3D> = {
+      torso: this.#torso,
+      armR: this.#shoulderR,
+      armL: this.#shoulderL,
+      legR: this.#hipR,
+      legL: this.#hipL,
+      staff: this.#staff,
+    };
+    const meshes: THREE.Mesh[] = [];
+    for (const [part, geometry] of Object.entries(skin.parts) as [SkinPart, THREE.BufferGeometry][]) {
+      const m = new THREE.Mesh(geometry, part === 'staff' ? staffMaterial : bronze);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.name = `skin-${part}`;
+      parents[part].add(m);
+      meshes.push(m);
+    }
+    this.#skin = { name: skin.name, meshes, hidden, staffMaterial };
+    this.setMark(false, 0);
+  }
+
+  /** Back to the stand-in body. */
+  removeSkin(): void {
+    const skin = this.#skin;
+    if (!skin) return;
+    for (const m of skin.meshes) m.removeFromParent();
+    for (const object of skin.hidden) object.visible = true;
+    const joints = [this.#shoulderR, this.#shoulderL, this.#hipR, this.#hipL, ...this.#hands];
+    joints.forEach((j, i) => this.#restJoints[i] && j.position.copy(this.#restJoints[i]!));
+    this.#skin = null;
+    this.setWeapon(this.#weapon); // re-apply blade / staff visibility
   }
 
   /** Bright blade flare on a perfect parry. */
@@ -349,6 +426,7 @@ export class PlayerRig {
     const deflecting = motor.action === CharacterAction.Parry && motor.actionTick < tuning.parry.perfectTicks;
     this.#parryFlash = Math.max(0, this.#parryFlash - frameDt * 4);
     this.#staffGold.emissiveIntensity = motor.action === CharacterAction.Attack ? 0.7 : deflecting ? 1.0 : 0;
+    if (this.#skin) this.#skin.staffMaterial.emissiveIntensity = this.#staffGold.emissiveIntensity * 0.35;
     this.#bladeMaterial.emissiveIntensity =
       (motor.action === CharacterAction.Attack ? 0.9 : deflecting ? 1.5 : 0.08) + this.#parryFlash * 4;
   }

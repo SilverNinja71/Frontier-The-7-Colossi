@@ -4,20 +4,29 @@ Everything in this folder except this README is ignored by git, and only the loc
 server (`npm run dev`) serves it. `npm run build` and `npm run preview` never include these
 files, so a build you publish cannot contain them.
 
-## Adding a model
+## A playable character from a statue (e.g. Sun Wukong)
 
-1. Download the model file (`.3mf` or `.stl`; `.glb`/`.gltf` also work).
-2. From the repository root, convert it:
+Print models are one fused mesh with no skeleton. The character builder cuts the statue into
+the rig's moving parts (torso and head, each arm, each leg, the weapon), removes the base it
+stands on, straightens the limbs into a standing pose, and scales it to the game:
 
-   ```bash
-   npm run statue -w @frontier/asset-pipeline -- --input "/path/to/your/model.3mf" --name wukong
-   ```
+```bash
+npm run character -w @frontier/asset-pipeline -- --input "/path/to/wukong.glb" --rig rigs/wukong.json --name wukong
+```
 
-   This stands it upright, scales it to metres, and simplifies it into `wukong.glb` here.
-   Turning it into the playable, animated Sun Wukong is the next step and builds on this file.
+This writes `wukong.rig.glb` here. Start `npm run dev` and the game wears it automatically
+(and picks up the staff). The pause menu has a toggle to switch back to the default hunter.
 
+`rigs/wukong.json` (in `apps/asset-pipeline`) holds the joint positions for that particular
+model, measured from front/side renders. A different model needs its own rig file: copy it and
+adjust the shoulders, elbows, wrists, hips, knees, ankles, sole heights and the weapon's two ends.
+
+## A static statue or showpiece
+
+```bash
+npm run statue -w @frontier/asset-pipeline -- --input "/path/to/your/model.3mf" --name wukong
+```
+
+This stands it upright, scales it to metres, and simplifies it into `wukong.glb` here.
 Options: `--yaw 90` (or 180, 270) if it faces the wrong way, `--height 3.4` in metres,
 `--triangles 40000` for the detail budget. Re-run the command to replace it.
-
-Keep these files out of commits and public builds: fan models of commercial characters and
-most model-site licenses do not allow redistribution.
