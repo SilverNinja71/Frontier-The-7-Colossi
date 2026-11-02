@@ -16,3 +16,4 @@ apps/client/private-assets/*
 xcuserdata/
 DerivedData/
 *.xcuserstate
+apps/asset-pipeline/.cache/

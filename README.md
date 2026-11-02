@@ -120,6 +120,25 @@ The client (`NatureKit`) loads it alongside physics, scatters it deterministical
 `BatchedMesh` per material (per-object culling for camera and shadows), sways foliage in the
 wind, thins it on phones, and falls back to procedural props if the file fails to load.
 
+**Ground textures.** Six CC0 scans from [Poly Haven](https://polyhaven.com) (grass, dirt path,
+rock face, sand, snow, forest floor; see `apps/client/public/assets/terrain/CREDITS.txt`):
+
+```bash
+npm run terrain -w @frontier/asset-pipeline
+```
+
+downloads the 1k diffuse maps (cached in the git-ignored `apps/asset-pipeline/.cache/`), softens
+their micro-contrast toward each layer's mean, blurs them seam-free, and packs them into one
+512 px strip, `layers.webp` (~115 KB). The client turns that into a texture array and divides
+every layer by its mean colour, so the palette (per-biome grass tints, dirt, rock, sand, snow)
+stays the game's own and the scans only add variation. Blending is height-based (each layer's
+texture decides the border) and rock is triplanar.
+
+**Icons.** Action icons are from [game-icons.net](https://game-icons.net) by Lorc and Delapouite
+([CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)); UI glyphs are adapted from
+[Lucide](https://lucide.dev) (ISC). Both are inlined in `apps/client/src/ui/icons.ts`, and the
+pause menu credits them.
+
 **Characters from statues (private, personal use).** `npm run character -w @frontier/asset-pipeline`
 turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character for the player
 rig: it cuts the mesh into torso and head, arms, legs and weapon by nearest bone, fits the

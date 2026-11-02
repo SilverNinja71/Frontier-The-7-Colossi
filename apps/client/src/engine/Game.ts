@@ -102,6 +102,7 @@ import { PlayerRig } from './PlayerRig.ts';
 import { SceneManager } from './SceneManager.ts';
 import { Landmarks } from './Landmarks.ts';
 import { Terrain } from './Terrain.ts';
+import { loadTerrainLayers, toTerrainTexture, type TerrainLayerImage } from './terrain-layers.ts';
 import { isTouchDevice, TouchControls } from './TouchControls.ts';
 import { Water } from './Water.ts';
 import { WorldScatter } from './WorldScatter.ts';
@@ -232,17 +233,18 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit, skin] = await Promise.all([
+    const [rapier, kit, skin, layers] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
       loadPrivateSkin(),
+      loadTerrainLayers(`${import.meta.env.BASE_URL}assets/terrain/layers.webp`),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers);
   }
 
   private constructor(
@@ -252,12 +254,13 @@ export class Game implements GameCommands {
     rapier: Rapier,
     private readonly kit: NatureKit | null,
     private readonly grid: HeightGrid,
-    private readonly skin: CharacterSkin | null = null,
+    private readonly skin: CharacterSkin | null,
+    layers: TerrainLayerImage,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
     this.#physics = new PhysicsWorld(rapier, SIM_DT);
-    this.#terrain = new Terrain(grid, this.#physics, this.#scene.renderer, touch);
+    this.#terrain = new Terrain(grid, this.#physics, toTerrainTexture(layers, this.#scene.renderer), layers.means, touch);
     this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit });
     this.#scatter = new WorldScatter(grid, this.#physics, kit, touch);
     this.#landmarks = new Landmarks(grid, this.#physics, kit);

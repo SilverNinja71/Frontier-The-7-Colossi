@@ -1,0 +1,8 @@
+Terrain textures from Poly Haven (https://polyhaven.com), CC0 1.0:
+- rocky_terrain_02 (https://polyhaven.com/a/rocky_terrain_02)
+- grass_path_2 (https://polyhaven.com/a/grass_path_2)
+- rock_face_03 (https://polyhaven.com/a/rock_face_03)
+- coast_sand_01 (https://polyhaven.com/a/coast_sand_01)
+- snow_02 (https://polyhaven.com/a/snow_02)
+- forrest_ground_01 (https://polyhaven.com/a/forrest_ground_01)
+Resized to 512px, softened and packed by apps/asset-pipeline/src/build-terrain.ts.

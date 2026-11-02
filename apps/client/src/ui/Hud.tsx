@@ -2,7 +2,7 @@ import { CharacterAction } from '@frontier/shared-types';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AdFailureReason, PlatformService } from '../platform/index.ts';
 import { LANDMARKS, WORLD_HALF } from '../world/geography.ts';
-import { ICONS, type IconName } from './icons.ts';
+import { GAME_ICONS, ICONS, isGameIcon, type IconName } from './icons.ts';
 import { pushToast, useHud, type HudState, type HuntReport } from './store.ts';
 
 export function Hud({ platform }: { platform: PlatformService }) {
@@ -31,6 +31,13 @@ export function Hud({ platform }: { platform: PlatformService }) {
 // --- Primitives ----------------------------------------------------------------
 
 function Icon({ name, size = 20, className = '' }: { name: IconName; size?: number; className?: string }) {
+  if (isGameIcon(name)) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 512 512" fill="currentColor" aria-hidden="true" className={className}>
+        <path d={GAME_ICONS[name]} />
+      </svg>
+    );
+  }
   return (
     <svg
       width={size}
@@ -274,10 +281,10 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
             Resume
           </Button>
           <div className="grid grid-cols-2 gap-2">
-            <Button size="sm" icon="map" onClick={() => commands?.openMap()}>
+            <Button size="sm" icon="gi-map" onClick={() => commands?.openMap()}>
               Map {discovered}/{LANDMARKS.length}
             </Button>
-            <Button size="sm" icon="swap" onClick={() => commands?.swapWeapon()} title="Swap weapon (Q)">
+            <Button size="sm" icon="gi-swap" onClick={() => commands?.swapWeapon()} title="Swap weapon (Q)">
               Swap
             </Button>
           </div>
@@ -294,11 +301,11 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
             <Toggle label="Tracking" on={target.tracking} onClick={() => commands?.toggleTracking()} />
             <Toggle label="Parry drill" on={target.strikeDrill} onClick={() => commands?.toggleStrikeDrill()} />
           </div>
-          <Button variant="arcane" block icon="moon" onClick={() => commands?.summonNewMoon()}>
+          <Button variant="arcane" block icon="gi-moon" onClick={() => commands?.summonNewMoon()}>
             Call the new moon
           </Button>
           {bossVisible && (
-            <Button variant="ghost" size="sm" block icon="sunrise" onClick={() => commands?.fleeToDawn()}>
+            <Button variant="ghost" size="sm" block icon="gi-sun" onClick={() => commands?.fleeToDawn()}>
               Flee until dawn · forfeits the mark
             </Button>
           )}
@@ -325,6 +332,9 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
             </p>
             <p className="mt-1 text-white/40">Revive tokens: casual dungeons only · No ads ever during Colossus raids</p>
           </div>
+          <p className="text-center text-[10px] leading-relaxed text-white/35">
+            Art: Quaternius (CC0) · Poly Haven (CC0) · Icons: game-icons.net by Lorc &amp; Delapouite (CC BY 3.0)
+          </p>
         </div>
         {platform.available && <div id="pause-banner" className="h-[250px] w-[300px] shrink-0" />}
       </div>
@@ -378,9 +388,7 @@ function PlayingHud() {
       <Toasts />
       <ComboCounter />
       <DebugPanel />
-      <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 flex items-end gap-3">
-        <Vitals />
-      </div>
+      <Vitals />
       <ActionBar />
     </>
   );
@@ -389,35 +397,28 @@ function PlayingHud() {
 function Vitals() {
   const v = useHud((s) => s.vitals);
   return (
-    <>
-      <Orb value={v.hp} max={v.maxHp} label="HP" from="#7f1d1d" to="#ef4444" />
-      <Orb
+    <div className="fixed left-4 top-[max(0.9rem,env(safe-area-inset-top))] flex w-[min(250px,34vw)] flex-col gap-1.5">
+      <VitalBar value={v.hp} max={v.maxHp} height={9} fill="linear-gradient(180deg, #d4473a, #8e1c18)" />
+      <VitalBar
         value={v.stamina}
         max={v.maxStamina}
-        label={v.exhausted ? 'Winded' : 'Stamina'}
-        from={v.exhausted ? '#7c2d12' : '#3f6212'}
-        to={v.exhausted ? '#f97316' : '#a3e635'}
+        height={5}
+        fill={v.exhausted ? 'linear-gradient(180deg, #f59e0b, #b45309)' : 'linear-gradient(180deg, #9ccf54, #4d7a20)'}
         pulse={v.exhausted}
       />
-    </>
+    </div>
   );
 }
 
-function Orb({ value, max, label, from, to, pulse = false }: { value: number; max: number; label: string; from: string; to: string; pulse?: boolean }) {
+function VitalBar({ value, max, height, fill, pulse = false }: { value: number; max: number; height: number; fill: string; pulse?: boolean }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return (
-    <div
-      className={`relative h-[72px] w-[72px] overflow-hidden rounded-full border-2 border-amber-200/45 bg-black/60 shadow-[0_0_0_3px_rgba(10,12,18,0.75),0_0_24px_rgba(0,0,0,0.6)] sm:h-20 sm:w-20 ${pulse ? 'animate-pulse' : ''}`}
-    >
-      <div
-        className="absolute inset-x-0 bottom-0 transition-[height] duration-150 ease-out"
-        style={{ height: `${pct}%`, background: `linear-gradient(to top, ${from}, ${to})` }}
-      />
-      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_35%_28%,rgba(255,255,255,0.38),transparent_45%)]" />
-      <div className="absolute inset-0 flex flex-col items-center justify-center leading-tight">
-        <span className="text-sm font-bold tabular-nums [text-shadow:0_1px_2px_#000]">{Math.ceil(value)}</span>
-        <span className="text-[9px] tracking-widest uppercase opacity-80">{label}</span>
+    <div className="flex items-center gap-2">
+      <div className={`fx-bar flex-1 ${pulse ? 'animate-pulse' : ''}`} style={{ height: height + 2 }}>
+        <div className="bg-amber-100/70 transition-[width] delay-300 duration-700 ease-out" style={{ width: `calc(${pct}% - 2px)` }} />
+        <div className="transition-[width] duration-100" style={{ width: `calc(${pct}% - 2px)`, background: fill }} />
       </div>
+      <span className="w-9 text-right text-[11px] font-semibold tabular-nums text-white/80 [text-shadow:0_1px_2px_#000]">{Math.ceil(value)}</span>
     </div>
   );
 }
@@ -434,25 +435,25 @@ function ActionBar() {
   const staff = weapon.name.toLowerCase().includes('staff');
   const move = attacking ? weapon.moves[v.comboStep] : undefined;
   return (
-    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 flex -translate-x-1/2 items-end gap-2">
-      <Slot keyLabel="LMB" name={move ?? 'Strike'} icon={staff ? 'staff' : 'swords'} active={attacking} disabled={v.exhausted} primary>
-        <div className="flex justify-center gap-1">
-          {weapon.moves.map((m, i) => (
-            <span
-              key={m}
-              className={`h-1.5 w-1.5 rotate-45 ${attacking && i <= v.comboStep ? 'bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]' : 'bg-white/25'}`}
-            />
-          ))}
-        </div>
-      </Slot>
-      <Slot keyLabel="Q" name="Swap" icon={staff ? 'swords' : 'staff'} active={false} />
-      <Slot keyLabel="Space" name="Dodge" icon="dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
-      <Slot keyLabel="RMB" name="Parry" icon="shield" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
-      <Slot keyLabel="Tab" name="Lock" icon="lock" active={lockOn} />
-      <Slot keyLabel="Shift" name="Sprint" icon="sprint" active={v.sprinting} disabled={v.exhausted} />
-      <Slot keyLabel="M" name="Map" icon="map" active={mapOpen} trainingOnly />
-      <Slot keyLabel="T" name="Drill" icon="target" active={target.drill} trainingOnly />
-      <Slot keyLabel="G" name="Track" icon="eye" active={target.tracking} trainingOnly />
+    <div className="fixed bottom-[max(1.6rem,calc(env(safe-area-inset-bottom)+0.6rem))] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
+      <div className="h-4 text-[11px] font-semibold tracking-[0.18em] text-amber-100/90 uppercase [text-shadow:0_1px_3px_#000]">{move ?? ''}</div>
+      <div className="flex items-end gap-2.5">
+        <Slot keyLabel="LMB" name="Strike" icon={staff ? 'gi-staff' : 'gi-swords'} active={attacking} disabled={v.exhausted} primary>
+          <div className="fx-slot__pips">
+            {weapon.moves.map((m, i) => (
+              <span key={m} className={`h-1 w-1 rotate-45 ${attacking && i <= v.comboStep ? 'bg-amber-200 shadow-[0_0_5px_rgba(252,211,77,0.9)]' : 'bg-white/25'}`} />
+            ))}
+          </div>
+        </Slot>
+        <Slot keyLabel="Q" name="Swap weapon" icon="gi-swap" active={false} />
+        <Slot keyLabel="Space" name="Dodge" icon="gi-dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
+        <Slot keyLabel="RMB" name="Parry" icon="gi-parry" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
+        <Slot keyLabel="Tab" name="Lock on" icon="gi-lock" active={lockOn} />
+        <Slot keyLabel="Shift" name="Sprint" icon="gi-sprint" active={v.sprinting} disabled={v.exhausted} />
+        <Slot keyLabel="M" name="Map" icon="gi-map" active={mapOpen} trainingOnly />
+        <Slot keyLabel="T" name="Slam drill" icon="gi-target" active={target.drill} trainingOnly />
+        <Slot keyLabel="G" name="Dummy tracking" icon="gi-eye" active={target.tracking} trainingOnly />
+      </div>
     </div>
   );
 }
@@ -474,20 +475,20 @@ function Slot({
   active: boolean;
   disabled?: boolean;
   highlight?: boolean;
-  /** Secondary slots: dropped on narrower screens so the bar never covers the orbs. */
+  /** Secondary slots: dropped on narrower screens so the bar stays compact. */
   trainingOnly?: boolean;
   primary?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div
-      className={`fx-slot ${primary ? 'fx-slot--primary' : ''} ${trainingOnly ? 'max-lg:!hidden' : ''} ${primary ? '' : 'max-sm:!h-12 max-sm:!w-12'}`}
+      className={`fx-slot ${primary ? 'fx-slot--primary' : ''} ${trainingOnly ? 'max-lg:!hidden' : ''} ${primary ? '' : 'max-sm:!h-11 max-sm:!w-11'}`}
       data-state={highlight ? 'highlight' : active ? 'active' : 'idle'}
       data-disabled={disabled}
+      title={name}
     >
-      <span className="fx-key">{keyLabel}</span>
-      <Icon name={icon} size={primary ? 24 : 19} />
-      <span className={`fx-slot__name ${primary ? 'max-w-[64px] truncate' : 'max-sm:hidden'}`}>{name}</span>
+      <Icon name={icon} size={primary ? 32 : 25} />
+      <span className="fx-slot__key">{keyLabel}</span>
       {children}
     </div>
   );
@@ -500,7 +501,7 @@ function TargetFrame() {
   // Out in the wilds the dummy's frame gives way to the region name.
   if (region && region !== 'Bastion Training Grounds' && t.dps === 0 && !t.strikeDrill) return null;
   return (
-    <div className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] w-[min(26rem,62vw)] -translate-x-1/2">
+    <div className="fixed left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] w-[clamp(15rem,calc(100vw-38rem),26rem)] -translate-x-1/2 max-md:top-[max(3.6rem,calc(env(safe-area-inset-top)+2.8rem))] max-md:w-[62vw]">
       <div className="mb-1 flex items-baseline justify-between text-xs">
         <span className="font-semibold tracking-wide [text-shadow:0_1px_3px_#000]">
           <span className="mr-1 text-amber-300">Lv.{t.level}</span>
@@ -530,7 +531,7 @@ function SkillTracker() {
   const pct = Math.min(100, (skill.precisionHits / skill.goal) * 100);
   return (
     <div
-      className={`fixed left-3 top-3 w-52 rounded-lg border border-amber-200/15 bg-black/50 p-2.5 text-[11px] shadow-[0_6px_18px_rgba(0,0,0,0.35)] ${touch ? 'hidden lg:block' : 'max-md:hidden'}`}
+      className={`fixed left-4 top-[max(3.4rem,calc(env(safe-area-inset-top)+2.6rem))] w-52 rounded-sm border border-amber-200/15 bg-black/45 p-2 text-[11px] ${touch ? 'hidden lg:block' : 'max-md:hidden'}`}
     >
       <div className="flex justify-between font-semibold">
         <span className="text-amber-200">{skill.name}</span>
@@ -827,7 +828,7 @@ function BossFrame() {
       ? { label: 'Parry its bite to stun the head', className: 'border-white/20 text-white/70' }
       : BOSS_STATUS[boss.status];
   return (
-    <div className="fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] w-[min(34rem,60vw)] -translate-x-1/2 text-center max-sm:w-[56vw]">
+    <div className="fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] w-[clamp(16rem,calc(100vw-38rem),34rem)] -translate-x-1/2 text-center max-md:top-[max(3.6rem,calc(env(safe-area-inset-top)+2.8rem))] max-md:w-[62vw]">
       <div className={`text-[10px] font-semibold tracking-[0.45em] uppercase [text-shadow:0_1px_3px_#000] ${style.kickerClass}`}>{style.kicker}</div>
       <div className={`font-display text-lg tracking-[0.25em] uppercase [text-shadow:0_2px_8px_#000] sm:text-xl ${style.nameClass}`}>
         {boss.name}

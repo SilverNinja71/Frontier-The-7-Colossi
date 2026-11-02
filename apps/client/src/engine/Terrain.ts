@@ -16,7 +16,6 @@ import {
   type HeightGrid,
 } from '../world/geography.ts';
 import type { PhysicsWorld } from './PhysicsWorld.ts';
-import { createTerrainDetailTexture } from './terrain-detail.ts';
 
 const CHUNK_CELLS = 64;
 const CHUNKS = GRID_CELLS / CHUNK_CELLS;
@@ -24,79 +23,104 @@ const SKIRT_DEPTH = 4;
 
 /** Grass tints per biome (sRGB). */
 const GRASS = {
-  meadow: [0.43, 0.6, 0.27],
-  forest: [0.3, 0.47, 0.21],
-  gloam: [0.22, 0.32, 0.29],
-  highland: [0.42, 0.53, 0.33],
-  amber: [0.72, 0.63, 0.29],
+  meadow: [0.42, 0.54, 0.28],
+  forest: [0.31, 0.43, 0.23],
+  gloam: [0.23, 0.31, 0.28],
+  highland: [0.44, 0.5, 0.35],
+  amber: [0.6, 0.56, 0.32],
 } as const;
 
 const VERTEX_PARS = /* glsl */ `
 attribute vec4 splat;
+attribute float forestFloor;
 varying vec4 vSplat;
+varying float vFloor;
 varying vec3 vTerrainPos;
+varying vec3 vTerrainNormal;
 `;
 
 const FRAGMENT_PARS = /* glsl */ `
-uniform sampler2D uDetail;
+uniform sampler2DArray uLayers;
+uniform vec3 uMean[6];
 uniform vec3 uDirt;
 uniform vec3 uRock;
 uniform vec3 uSand;
 uniform vec3 uSnow;
+uniform vec3 uFloor;
 varying vec4 vSplat;
+varying float vFloor;
 varying vec3 vTerrainPos;
+varying vec3 vTerrainNormal;
 
-// Screen-space bump from a scalar height (same math as three's bump map).
-vec3 terrainBump(vec3 surfPos, vec3 surfNorm, float height, float strength, float faceDir) {
-  vec3 sigmaX = dFdx(surfPos);
-  vec3 sigmaY = dFdy(surfPos);
-  vec3 r1 = cross(sigmaY, surfNorm);
-  vec3 r2 = cross(surfNorm, sigmaX);
-  float det = dot(sigmaX, r1) * faceDir;
-  vec2 dh = vec2(dFdx(height), dFdy(height)) * strength;
-  vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);
-  return normalize(abs(det) * surfNorm - grad);
+float terrainLum(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// A layer's variation around 1.0 (texture / its mean). Two scales, rotated against each other,
+// so the tiling never lines up.
+vec3 terrainDetail(int layer, vec2 uv) {
+  vec3 a = texture(uLayers, vec3(uv, float(layer))).rgb;
+  vec3 b = texture(uLayers, vec3(mat2(0.8, -0.6, 0.6, 0.8) * uv * 0.37 + 0.31, float(layer))).rgb;
+  return mix(a, b, 0.4) / uMean[layer];
+}
+
+// The palette colour, varied by the scan: mostly in brightness, a little in hue.
+vec3 terrainPaint(vec3 palette, vec3 detail, float hue) {
+  return palette * mix(vec3(terrainLum(detail)), detail, hue);
 }
 `;
 
 const FRAGMENT_COLOR = /* glsl */ `
 vec2 wp = vTerrainPos.xz;
-vec4 dNear = texture2D(uDetail, wp * 0.23);
-vec4 dFar = texture2D(uDetail, wp * 0.041 + vec2(0.37, 0.61));
-vec4 det = mix(dNear, dFar, 0.38);
-// Steep rock reads better projected sideways (cliff strata instead of stretched plates).
-vec4 dSide = texture2D(uDetail, vec2(wp.x + wp.y, vTerrainPos.y * 1.6) * 0.16);
-det.b = mix(det.b, dSide.b, clamp(vSplat.y * 1.2, 0.0, 1.0));
-float macro = texture2D(uDetail, wp * 0.0063 + 0.13).r;
+vec2 uv = wp * 0.13;
+vec3 gD = terrainDetail(0, uv);
+vec3 dD = terrainDetail(1, uv * 1.1);
+vec3 sD = terrainDetail(3, uv);
+vec3 nD = terrainDetail(4, uv * 0.8);
+vec3 fD = terrainDetail(5, uv * 1.2);
+// Rock is projected from three sides so cliffs never stretch.
+vec3 tri = pow(abs(normalize(vTerrainNormal)), vec3(4.0));
+tri /= tri.x + tri.y + tri.z;
+vec3 rD = (texture(uLayers, vec3(vTerrainPos.zy * 0.09, 2.0)).rgb * tri.x
+  + texture(uLayers, vec3(wp * 0.09, 2.0)).rgb * tri.y
+  + texture(uLayers, vec3(vTerrainPos.xy * 0.09, 2.0)).rgb * tri.z) / uMean[2];
 
+// Colour comes from the palette (grass from the per-biome vertex tint); the scans add variation.
+vec3 grassT = terrainPaint(diffuseColor.rgb, gD, 0.45);
+vec3 dirtT = terrainPaint(uDirt, dD, 0.5);
+vec3 rockT = terrainPaint(uRock, rD, 0.6);
+vec3 sandT = terrainPaint(uSand, sD, 0.4);
+vec3 snowT = terrainPaint(uSnow, nD, 0.2);
+vec3 floorT = terrainPaint(mix(uFloor, diffuseColor.rgb, 0.3), fD, 0.6);
+
+// Height-based blending: each layer's own texture decides who wins along the borders.
+float hG = clamp(terrainLum(gD) * 0.5, 0.0, 1.0);
+float hD = clamp(terrainLum(dD) * 0.5, 0.0, 1.0);
+float hR = clamp(terrainLum(rD) * 0.5, 0.0, 1.0);
+float hS = clamp(terrainLum(sD) * 0.5, 0.0, 1.0);
+float hN = clamp(terrainLum(nD) * 0.5, 0.0, 1.0);
+float hF = clamp(terrainLum(fD) * 0.5, 0.0, 1.0);
 float grassW = clamp(1.0 - vSplat.x - vSplat.y - vSplat.z - vSplat.w, 0.0, 1.0);
-// Height-based blending: each layer's own detail decides who wins at the borders.
-vec4 hw = vSplat * (vec4(0.55) + vec4(det.g, det.b, det.a, 0.4 + 0.3 * det.r));
-float gw = grassW * (0.55 + det.r);
-float top = max(max(max(hw.x, hw.y), max(hw.z, hw.w)), gw) - 0.22;
+vec4 hw = vSplat * (vec4(0.6) + vec4(hD, hR, hS, hN) * 0.9);
+float gw = grassW * (1.0 - vFloor) * (0.6 + hG * 0.9);
+float fw = grassW * vFloor * (0.6 + hF * 0.9);
+float top = max(max(max(hw.x, hw.y), max(hw.z, hw.w)), max(gw, fw)) - 0.2;
 hw = max(hw - top, 0.0);
 gw = max(gw - top, 0.0);
-float total = max(hw.x + hw.y + hw.z + hw.w + gw, 1e-4);
-
-vec3 grassCol = diffuseColor.rgb * (0.8 + 0.4 * det.r);
-vec3 dirtCol = uDirt * (0.8 + 0.4 * det.g);
-vec3 rockCol = uRock * (0.7 + 0.5 * det.b);
-vec3 sandCol = uSand * (0.9 + 0.18 * det.a);
-vec3 snowCol = uSnow * (0.95 + 0.08 * det.r);
-vec3 terrainCol = (grassCol * gw + dirtCol * hw.x + rockCol * hw.y + sandCol * hw.z + snowCol * hw.w) / total;
-terrainCol *= 0.88 + 0.24 * macro;
+fw = max(fw - top, 0.0);
+float total = max(hw.x + hw.y + hw.z + hw.w + gw + fw, 1e-4);
+vec3 terrainCol = (grassT * gw + floorT * fw + dirtT * hw.x + rockT * hw.y + sandT * hw.z + snowT * hw.w) / total;
+// Broad light/dark patches break up the field at a distance.
+float macro = terrainLum(texture(uLayers, vec3(wp * 0.0097, 0.0)).rgb / uMean[0]);
+terrainCol *= mix(1.0, clamp(macro, 0.6, 1.4), 0.55);
 diffuseColor.rgb = terrainCol;
-float terrainHeight = (det.r * gw * 0.7 + det.g * hw.x + det.b * hw.y * 1.3 + det.a * hw.z * 0.4 + det.r * hw.w * 0.15) / total;
-`;
-
-const FRAGMENT_NORMAL = /* glsl */ `
-normal = terrainBump(-vViewPosition, normal, terrainHeight, 0.55, faceDirection);
 `;
 
 /**
- * The Bramble Primeval' ground: 8×8 chunks (96 m) with two levels of detail and skirts, a
- * splat shader that blends grass, dirt, rock, sand and snow with procedural detail and bump,
- * and a single Rapier heightfield for collision.
+ * The Bramble Primeval's ground: 8×8 chunks (96 m) with three levels of detail and skirts, a
+ * splat shader blending six ground layers (grass, dirt, rock, sand, snow, forest floor) by
+ * slope, height, roads and biome: the colours are the game's palette and CC0 photo scans (one
+ * texture array) supply the variation. Plus one Rapier heightfield.
  */
 export class Terrain {
   readonly group = new THREE.Group();
@@ -105,17 +129,19 @@ export class Terrain {
   constructor(
     private readonly grid: HeightGrid,
     physics: PhysicsWorld,
-    renderer: THREE.WebGLRenderer,
+    layers: THREE.DataArrayTexture,
+    layerMeans: readonly THREE.Vector3[],
     lowPower: boolean,
   ) {
-    const detail = createTerrainDetailTexture(renderer);
-    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0 });
+    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
     const uniforms = {
-      uDetail: { value: detail },
-      uDirt: { value: new THREE.Color().setRGB(0.55, 0.42, 0.29, THREE.SRGBColorSpace) },
-      uRock: { value: new THREE.Color().setRGB(0.56, 0.54, 0.5, THREE.SRGBColorSpace) },
-      uSand: { value: new THREE.Color().setRGB(0.83, 0.75, 0.56, THREE.SRGBColorSpace) },
+      uLayers: { value: layers },
+      uMean: { value: Array.from({ length: 6 }, (_, i) => layerMeans[i] ?? new THREE.Vector3(0.5, 0.5, 0.5)) },
+      uDirt: { value: new THREE.Color().setRGB(0.55, 0.43, 0.3, THREE.SRGBColorSpace) },
+      uRock: { value: new THREE.Color().setRGB(0.55, 0.52, 0.47, THREE.SRGBColorSpace) },
+      uSand: { value: new THREE.Color().setRGB(0.8, 0.72, 0.54, THREE.SRGBColorSpace) },
       uSnow: { value: new THREE.Color().setRGB(0.93, 0.95, 0.98, THREE.SRGBColorSpace) },
+      uFloor: { value: new THREE.Color().setRGB(0.36, 0.3, 0.2, THREE.SRGBColorSpace) },
     };
     this.material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -123,14 +149,13 @@ export class Terrain {
         .replace('#include <common>', `#include <common>\n${VERTEX_PARS}`)
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\nvSplat = splat;\nvTerrainPos = (modelMatrix * vec4(position, 1.0)).xyz;',
+          '#include <begin_vertex>\nvSplat = splat;\nvFloor = forestFloor;\nvTerrainNormal = normal;\nvTerrainPos = (modelMatrix * vec4(position, 1.0)).xyz;',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAGMENT_COLOR}`)
-        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${FRAGMENT_NORMAL}`);
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAGMENT_COLOR}`);
     };
-    this.material.customProgramCacheKey = () => 'frontier-terrain';
+    this.material.customProgramCacheKey = () => 'frontier-terrain-layers';
 
     const fields = this.#vertexFields();
     const lodDistance = lowPower ? 110 : 190;
@@ -157,11 +182,12 @@ export class Terrain {
   }
 
   /** Per-grid-vertex normal, grass tint and splat weights, shared by every LOD. */
-  #vertexFields(): { normals: Float32Array; colors: Uint8Array; splats: Uint8Array } {
+  #vertexFields(): TerrainFields {
     const n = this.grid.size;
     const normals = new Float32Array(n * n * 3);
     const colors = new Uint8Array(n * n * 3);
     const splats = new Uint8Array(n * n * 4);
+    const floors = new Uint8Array(n * n);
     const biome: Biome = { forest: 0, gloam: 0, highland: 0, amber: 0, mesa: 0 };
     const road = { weight: 0, x: 0, z: 0 };
     const tint = new THREE.Color();
@@ -200,7 +226,7 @@ export class Terrain {
         let rock = smoothstep(0.2, 0.38, slope) + biome.mesa * smoothstep(0.08, 0.2, slope);
         rock += smoothstep(22, 34, h) * smoothstep(0.55, 0.7, fbm(x * 0.06, z * 0.06 + 5));
         let dirt = roadAt(x, z, road).weight * 0.95;
-        dirt += biome.gloam * smoothstep(0.55, 0.7, patch) * 0.8;
+        dirt += biome.gloam * smoothstep(0.62, 0.75, patch) * 0.6;
         dirt += smoothstep(ARENA_RADIUS + 9, ARENA_RADIUS + 1.5, r) * 0.5; // trampled ground at the wall
         dirt += 1 - smoothstep(GULLET.radius - 1, GULLET.radius + 2, Math.hypot(x - GULLET.x, z - GULLET.z)); // the Gullet's gravel
         let sand = 1 - smoothstep(ARENA_RADIUS + 0.5, ARENA_RADIUS + 2.5, r);
@@ -213,13 +239,15 @@ export class Terrain {
         splats[i * 4 + 1] = byte(rock);
         splats[i * 4 + 2] = byte(sand);
         splats[i * 4 + 3] = byte(snow);
+        // Leaf litter and mud under the trees, darkest in the Gloamwood.
+        floors[i] = byte(Math.min(1, biome.gloam * 0.85 + biome.forest * 0.55 * smoothstep(0.4, 0.62, patch)));
       }
     }
-    return { normals, colors, splats };
+    return { normals, colors, splats, floors };
   }
 
   #chunkMesh(
-    fields: { normals: Float32Array; colors: Uint8Array; splats: Uint8Array },
+    fields: TerrainFields,
     cx: number,
     cz: number,
     step: number,
@@ -235,6 +263,7 @@ export class Terrain {
     const normals = new Float32Array(vertexCount * 3);
     const colors = new Uint8Array(vertexCount * 3);
     const splats = new Uint8Array(vertexCount * 4);
+    const floors = new Uint8Array(vertexCount);
     const copy = (dst: number, ix: number, iz: number, drop: number) => {
       const src = iz * n + ix;
       positions[dst * 3] = -WORLD_HALF + ix * CELL_SIZE - centerX;
@@ -243,6 +272,7 @@ export class Terrain {
       normals.set(fields.normals.subarray(src * 3, src * 3 + 3), dst * 3);
       colors.set(fields.colors.subarray(src * 3, src * 3 + 3), dst * 3);
       splats.set(fields.splats.subarray(src * 4, src * 4 + 4), dst * 4);
+      floors[dst] = fields.floors[src]!;
     };
     for (let j = 0; j < side; j++) {
       for (let i = 0; i < side; i++) copy(j * side + i, ix0 + i * step, iz0 + j * step, 0);
@@ -281,6 +311,7 @@ export class Terrain {
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3, true));
     geometry.setAttribute('splat', new THREE.BufferAttribute(splats, 4, true));
+    geometry.setAttribute('forestFloor', new THREE.BufferAttribute(floors, 1, true));
     geometry.setIndex(indices);
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, this.material);
@@ -288,6 +319,13 @@ export class Terrain {
     mesh.matrixAutoUpdate = false;
     return mesh;
   }
+}
+
+interface TerrainFields {
+  normals: Float32Array;
+  colors: Uint8Array;
+  splats: Uint8Array;
+  floors: Uint8Array;
 }
 
 function mixInto(out: number[], a: readonly number[], b: readonly number[], t: number): void {

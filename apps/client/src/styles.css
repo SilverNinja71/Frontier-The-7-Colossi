@@ -80,121 +80,101 @@ body {
  */
 @layer components {
   .fx-btn {
-    --fx-trim: linear-gradient(180deg, #f8e2a0 0%, #a87a2b 48%, #6e4a14 52%, #e9c66f 100%);
-    --fx-fill: linear-gradient(180deg, #2c2419 0%, #16110b 100%);
-    --fx-text: #f7e7bf;
-    --fx-cut: 11px;
+    --fx-line: rgb(214 190 130 / 0.42);
+    --fx-fill: rgb(10 10 14 / 0.72);
+    --fx-text: #ece2c8;
     position: relative;
-    isolation: isolate;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.6em;
-    padding: 0.78em 1.9em;
+    padding: 0.75em 1.7em;
     font-family: var(--font-display);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 600;
     line-height: 1.1;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--fx-text);
-    text-shadow: 0 1px 2px rgb(0 0 0 / 0.75);
-    background: var(--fx-trim);
-    clip-path: polygon(
-      var(--fx-cut) 0,
-      calc(100% - var(--fx-cut)) 0,
-      100% 50%,
-      calc(100% - var(--fx-cut)) 100%,
-      var(--fx-cut) 100%,
-      0 50%
-    );
+    background: var(--fx-fill);
+    border: 1px solid var(--fx-line);
+    border-radius: 2px;
+    box-shadow:
+      inset 0 0 0 1px rgb(0 0 0 / 0.55),
+      inset 0 1px 0 rgb(255 255 255 / 0.05);
     cursor: pointer;
     transition:
-      transform 120ms ease,
-      filter 160ms ease;
+      border-color 150ms ease,
+      background 150ms ease,
+      color 150ms ease,
+      box-shadow 150ms ease,
+      transform 100ms ease;
   }
-  .fx-btn::before {
-    content: '';
-    position: absolute;
-    inset: 2px;
-    z-index: -2;
-    background: var(--fx-fill);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
-    clip-path: polygon(
-      calc(var(--fx-cut) - 1px) 0,
-      calc(100% - var(--fx-cut) + 1px) 0,
-      100% 50%,
-      calc(100% - var(--fx-cut) + 1px) 100%,
-      calc(var(--fx-cut) - 1px) 100%,
-      0 50%
-    );
-  }
+  /* Small diamonds riding the border at each end. */
+  .fx-btn::before,
   .fx-btn::after {
     content: '';
     position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: linear-gradient(105deg, transparent 30%, rgb(255 244 214 / 0.32) 48%, transparent 66%);
-    transform: translateX(-130%);
-    transition: transform 650ms ease;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    background: var(--fx-line);
+    transform: translateY(-50%) rotate(45deg);
+    transition: background 150ms ease;
   }
-  .fx-btn:hover {
-    filter: brightness(1.14) saturate(1.05);
+  .fx-btn::before {
+    left: -3px;
   }
-  .fx-btn:hover::after {
-    transform: translateX(130%);
+  .fx-btn::after {
+    right: -3px;
+  }
+  .fx-btn:hover,
+  .fx-btn:focus-visible {
+    --fx-line: rgb(240 214 150 / 0.95);
+    outline: none;
+    color: #fff;
+    background: linear-gradient(180deg, rgb(214 190 130 / 0.16), rgb(214 190 130 / 0.05)), var(--fx-fill);
+    box-shadow:
+      0 0 18px rgb(214 190 130 / 0.16),
+      inset 0 0 0 1px rgb(0 0 0 / 0.55);
   }
   .fx-btn:active {
-    transform: translateY(1px) scale(0.975);
-    filter: brightness(0.95);
-  }
-  .fx-btn:focus-visible {
-    outline: none;
-    filter: brightness(1.25);
+    transform: translateY(1px);
   }
   .fx-btn:disabled {
     cursor: not-allowed;
-    filter: grayscale(0.85) brightness(0.6);
-  }
-  .fx-btn:disabled::after {
-    display: none;
+    opacity: 0.4;
   }
   .fx-btn svg {
     flex: none;
-    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.6));
   }
-
   .fx-btn--primary {
-    --fx-trim: linear-gradient(180deg, #fff3cc 0%, #c9952f 50%, #7a4d0e 100%);
-    --fx-fill: linear-gradient(180deg, #f6cf6a 0%, #dda33a 45%, #b0731c 100%);
-    --fx-text: #2b1705;
-    text-shadow: 0 1px 0 rgb(255 240 196 / 0.55);
-  }
-  .fx-btn--primary svg {
-    filter: none;
+    --fx-line: rgb(232 205 140 / 0.8);
+    --fx-fill: linear-gradient(180deg, rgb(34 28 20 / 0.88), rgb(12 10 9 / 0.9));
+    --fx-text: #f3dfa6;
+    box-shadow:
+      inset 0 0 0 1px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 rgb(240 214 150 / 0.22),
+      0 6px 24px rgb(0 0 0 / 0.35);
   }
   .fx-btn--arcane {
-    --fx-trim: linear-gradient(180deg, #e4d4ff 0%, #7d55d6 50%, #3b2275 100%);
-    --fx-fill: linear-gradient(180deg, #3d2475 0%, #1c1038 100%);
-    --fx-text: #eee4ff;
+    --fx-line: rgb(190 160 255 / 0.6);
+    --fx-fill: linear-gradient(180deg, rgb(70 40 120 / 0.55), rgb(28 16 54 / 0.7));
+    --fx-text: #efe6ff;
   }
   .fx-btn--ghost {
-    --fx-trim: linear-gradient(180deg, rgb(255 255 255 / 0.38), rgb(255 255 255 / 0.1));
-    --fx-fill: linear-gradient(180deg, rgb(32 36 48 / 0.95), rgb(14 16 23 / 0.95));
-    --fx-text: rgb(255 255 255 / 0.78);
+    --fx-line: rgb(255 255 255 / 0.2);
+    --fx-text: rgb(255 255 255 / 0.72);
   }
   .fx-btn--sm {
-    --fx-cut: 9px;
-    padding: 0.62em 1.3em;
-    font-size: 11px;
-    letter-spacing: 0.12em;
+    padding: 0.6em 1.2em;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
   }
   .fx-btn--lg {
-    --fx-cut: 14px;
-    padding: 0.95em 2.6em;
-    font-size: 15px;
-    letter-spacing: 0.24em;
+    padding: 0.95em 2.8em;
+    font-size: 14px;
+    letter-spacing: 0.28em;
   }
   .fx-btn--block {
     display: flex;
@@ -317,69 +297,86 @@ body {
     white-space: nowrap;
   }
 
-  /* Action bar slots. */
+  /* Action bar slots: dark squares with a hairline frame; the key sits underneath. */
   .fx-slot {
     position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    width: 58px;
-    height: 58px;
-    border-radius: 9px;
-    border: 1px solid rgb(255 255 255 / 0.16);
+    width: 50px;
+    height: 50px;
+    border-radius: 3px;
+    border: 1px solid rgb(214 190 130 / 0.3);
     background:
-      radial-gradient(90% 70% at 50% 15%, rgb(255 255 255 / 0.09), transparent 70%),
-      linear-gradient(180deg, rgb(26 29 40 / 0.88), rgb(9 10 15 / 0.92));
+      radial-gradient(80% 80% at 50% 30%, rgb(255 255 255 / 0.06), transparent 70%),
+      rgb(8 8 12 / 0.78);
     box-shadow:
-      0 6px 16px rgb(0 0 0 / 0.45),
-      inset 0 1px 0 rgb(255 255 255 / 0.08),
-      inset 0 -2px 0 rgb(0 0 0 / 0.4);
-    color: rgb(255 255 255 / 0.82);
+      inset 0 0 0 1px rgb(0 0 0 / 0.6),
+      0 4px 14px rgb(0 0 0 / 0.45);
+    color: #e6d6ad;
     transition:
       border-color 120ms ease,
       box-shadow 120ms ease,
-      transform 120ms ease,
+      color 120ms ease,
       opacity 120ms ease;
   }
-  .fx-slot .fx-key {
+  .fx-slot__key {
     position: absolute;
-    top: -7px;
+    bottom: -17px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 9px;
-    background: linear-gradient(180deg, #2a2d38, #15171e);
-  }
-  .fx-slot__name {
-    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 9.5px;
     font-weight: 700;
     letter-spacing: 0.04em;
+    padding: 1px 4px;
+    color: rgb(236 222 190 / 0.85);
     white-space: nowrap;
+    background: rgb(6 6 10 / 0.6);
+    border-radius: 2px;
+  }
+  .fx-slot__pips {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    display: flex;
+    gap: 3px;
+    transform: translateX(-50%);
   }
   .fx-slot[data-state='active'] {
-    border-color: rgb(253 211 77 / 0.9);
-    color: #fef3c7;
-    transform: translateY(-2px);
+    border-color: rgb(240 214 150 / 0.95);
+    color: #fff3d0;
     box-shadow:
-      0 0 0 1px rgb(253 211 77 / 0.4),
-      0 0 18px rgb(251 191 36 / 0.45),
-      inset 0 1px 0 rgb(255 255 255 / 0.12);
+      inset 0 0 0 1px rgb(0 0 0 / 0.6),
+      0 0 16px rgb(240 200 110 / 0.45);
   }
   .fx-slot[data-state='highlight'] {
-    border-color: rgb(125 211 252);
+    border-color: rgb(140 210 255 / 0.95);
     color: #e0f2fe;
     box-shadow:
-      0 0 0 1px rgb(125 211 252 / 0.45),
-      0 0 20px rgb(56 189 248 / 0.6);
+      inset 0 0 0 1px rgb(0 0 0 / 0.6),
+      0 0 18px rgb(56 189 248 / 0.55);
   }
   .fx-slot[data-disabled='true'] {
     opacity: 0.4;
   }
   .fx-slot--primary {
-    width: 70px;
-    height: 70px;
-    border-color: rgb(253 230 138 / 0.4);
+    width: 60px;
+    height: 60px;
+    border-color: rgb(214 190 130 / 0.55);
+  }
+
+  /* Vitals: thin bars with a lagging damage ghost. */
+  .fx-bar {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgb(214 190 130 / 0.35);
+    background: rgb(6 6 10 / 0.72);
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.6);
+  }
+  .fx-bar > div {
+    position: absolute;
+    inset: 1px auto 1px 1px;
   }
 
   /* Touch buttons: glossy discs. */

@@ -53,14 +53,14 @@ export class TouchControls {
     const cluster = el('div', 'absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-5 flex items-end gap-3');
     const column = el('div', 'flex flex-col items-center gap-3');
     column.append(
-      this.#button('Parry', 'shield', 'fx-touch--parry h-16 w-16', InputButton.Parry, signal),
-      this.#button('Dodge', 'dodge', 'fx-touch--dodge h-16 w-16', InputButton.Dodge, signal),
+      this.#button('Parry', 'gi-parry', 'fx-touch--parry h-16 w-16', InputButton.Parry, signal),
+      this.#button('Dodge', 'gi-dodge', 'fx-touch--dodge h-16 w-16', InputButton.Dodge, signal),
     );
-    cluster.append(column, this.#button('Strike', 'swords', 'fx-touch--strike h-24 w-24 text-xs', InputButton.Attack, signal, 30));
-    const sprint = this.#toggle('Sprint', 'sprint', 'fx-touch--sprint absolute bottom-48 right-28 h-14 w-14', signal);
-    const lock = this.#action('Lock', 'lock', 'fx-touch--lock absolute bottom-48 right-6 h-14 w-14', actions.onLock, signal);
-    const swap = this.#action('Swap', 'swap', 'fx-touch--utility absolute bottom-[17rem] right-6 h-12 w-12', actions.onSwap, signal);
-    const map = this.#action('Map', 'map', 'fx-touch--utility absolute bottom-[17rem] right-28 h-12 w-12', actions.onMap, signal);
+    cluster.append(column, this.#button('Strike', 'gi-swords', 'fx-touch--strike h-24 w-24 text-xs', InputButton.Attack, signal, 30));
+    const sprint = this.#toggle('Sprint', 'gi-sprint', 'fx-touch--sprint absolute bottom-48 right-28 h-14 w-14', signal);
+    const lock = this.#action('Lock', 'gi-lock', 'fx-touch--lock absolute bottom-48 right-6 h-14 w-14', actions.onLock, signal);
+    const swap = this.#action('Swap', 'gi-swap', 'fx-touch--utility absolute bottom-[17rem] right-6 h-12 w-12', actions.onSwap, signal);
+    const map = this.#action('Map', 'gi-map', 'fx-touch--utility absolute bottom-[17rem] right-28 h-12 w-12', actions.onMap, signal);
     const pause = this.#action('', 'pause', 'fx-touch--utility absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-11 w-11', actions.onPause, signal);
     this.root.append(cluster, sprint, lock, swap, map, pause);
     parent.appendChild(this.root);
