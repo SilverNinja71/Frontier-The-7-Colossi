@@ -8,7 +8,7 @@ integration, and the start of a native Apple client (`apps/apple`).
 The world, its places and its colossi are original. Post-apocalyptic fantasy: a medieval
 frontier built over the buried ruins of the Age of Ancients. Zone 1 is the First Bastion, a
 walled starting town (the arena), and Zone 2 the Bramble Primeval around it (its gate boss,
-the Gluttonous Serpent, is planned).
+the Gluttonous Serpent, waits in the Gullet before the Thornpass Gate).
 
 ## Quick start
 
@@ -182,6 +182,7 @@ inside a ring of mountains, built from one deterministic height function
 | Fallen Colonnade | South | Rows of fallen columns on a stone terrace |
 | The Moonless Circle | West, in the Gloamwood | Nine standing stones whose runes wake at night |
 | The Elder Oak | South-east, Amber Meadow | A giant oak on a golden hill |
+| The Gullet | End of Windcut Gorge | A walled gravel hollow, an old ribcage, the sealed Thornpass Gate, and the Gluttonous Serpent |
 
 Dirt roads lead from the four gates to every landmark. Biomes (meadow, broadleaf woods, the
 dark Gloamwood with twisted trees, pine highlands, the mesa, the golden meadow, the lake shore)
@@ -201,6 +202,32 @@ drive both the ground colours and what grows.
   the player; trees and rocks are batched per material.
 - **The Shadow Stalker hunts you anywhere.** Out in the wilds it rises where you are looking
   and fights on slopes (its attacks and tells follow the terrain height).
+
+## The Gluttonous Serpent (gate guardian of the Bramble Primeval)
+
+Follow Windcut Gorge to its end. The Gullet is a hollow walled in by rock, open only to the
+gorge road; a mound of gravel and thorns sits in the middle, and the Thornpass Gate is barred
+behind it. Step in and a thirty-metre serpent rises.
+
+| Move | Tell | Answer |
+| --- | --- | --- |
+| **Fang Lunge** | Head rears back, eyes gold, then **white** | Parry on white: the head is **stunned** (~2.5 s) and takes **double** damage. A dodge also works but stuns nothing. |
+| **Tail Scythe** | Tail barb glows, red ring around the tail, 危 | Can't be parried: roll through it or stay away from the tail. |
+| **Bile Spit** | Head rises, green ring where you stand, a glob arcs over | Move off the ring. It leaves acid that burns while you stand in it. |
+| **Devour** | Jaws open wide, purple cone on the ground, 危, then a roar of wind | Sprint or roll sideways out of the cone. Caught at the jaws: swallowed (40% HP, it heals 4%) and spat out. Rolling at the last moment slips free. |
+| **Frenzy** (below 50%) | Hood flares and glows | Faster, bites twice in a row, bile splits into four pools. |
+
+Its scales take half damage (body ×0.5); the head is the weak point (×1.5 and a crit bonus).
+Its coils are solid (it shoves you out of them, except while it inhales). Leave the Gullet or fall
+and it burrows back and heals. Slay it and the Thornpass Gate opens for good (saved in this
+browser); the serpent regrows by the next dawn for a rematch. Lock on (Tab) targets its head.
+
+The brain is `packages/combat-math/src/serpent.ts` (deterministic, server-ready): the head moves
+freely and the body follows the head's recorded path, so the coils stay where it has been.
+The client (`combat/GluttonousSerpent.ts`) draws it from code: banded body with a cream belly,
+bramble-thorn spines, a horned head with an opening jaw and a hood. Its colours live in
+`SERPENT_LOOK`, so concept art can retune it, and a generated head model can replace the
+procedural head without touching the fight.
 
 ## The Shadow Stalker (Unique Colossus #1)
 
@@ -288,13 +315,15 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Verification
 
-- `npm run check`: typecheck, 63 unit tests (motor, dodge distance/i-frames, combo/cancel,
+- `npm run check`: typecheck, 82 unit tests (motor, dodge distance/i-frames, combo/cancel,
   parry windows/frontal arc/guard break, lock-on strafing, stamina exhaustion, hit registration
   incl. directional weak points, damage, marks, skill evolution, world clock and moon phases,
   simulated Shadow Stalker fights (a perfect-parry bot subdues it, a passive one never exposes
   it, dawn dissolves it, seeds are deterministic), its difficulty envelope, hesitating
   windups, per-attack deflect windows, Eclipse and feeding, Tail Lash, parry-spam wariness, the
-  Stalker striking from terrain height, the staff moveset, world geography (level arena floor,
+  Stalker striking from terrain height, the Gluttonous Serpent (rising, body following the head's
+  path, parry stun and double head damage, devour pull, swallow and last-moment escape, frenzy and
+  death, leash reset, acid, solid coils, determinism), the staff moveset, world geography (level arena floor,
   wadeable lake and isle, mountain ring, roads levelling the ground, Rapier heightfield layout),
   SDK wrapper lifecycle/policy/errors/
   throttling/timeouts), and the production build.

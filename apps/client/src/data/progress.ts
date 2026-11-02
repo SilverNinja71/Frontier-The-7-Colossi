@@ -98,3 +98,28 @@ export function saveDiscovered(ids: readonly string[]): void {
     // Storage blocked: discoveries last this session.
   }
 }
+
+const GULLET_KEY = 'frontier.sandbox.gullet';
+
+export interface GulletProgress {
+  /** The Thornpass Gate stays open for good once the serpent has fallen. */
+  gateOpen: boolean;
+  slain: number;
+}
+
+export function loadGullet(): GulletProgress {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GULLET_KEY) ?? 'null') as Partial<GulletProgress> | null;
+    return { gateOpen: parsed?.gateOpen === true, slain: typeof parsed?.slain === 'number' ? parsed.slain : 0 };
+  } catch {
+    return { gateOpen: false, slain: 0 };
+  }
+}
+
+export function saveGullet(progress: GulletProgress): void {
+  try {
+    localStorage.setItem(GULLET_KEY, JSON.stringify(progress));
+  } catch {
+    // Storage blocked: lasts this session.
+  }
+}

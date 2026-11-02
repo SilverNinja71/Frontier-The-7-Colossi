@@ -1,4 +1,4 @@
-import { DUAL_BLADES_MOVESET, STAFF_MOVESET, STALKER_ATTACKS, STALKER_TUNING } from '@frontier/combat-math';
+import { DUAL_BLADES_MOVESET, SERPENT_TUNING, STAFF_MOVESET, STALKER_ATTACKS, STALKER_TUNING } from '@frontier/combat-math';
 import type {
   ColossusDefinition,
   Hurtbox,
@@ -93,6 +93,27 @@ export const TRAINING_DUMMY: MonsterDefinition = {
   drops: [],
   respawnSeconds: 0,
   tags: ['training', 'firstia'],
+};
+
+/** Gate guardian of the Bramble Primeval (hurtboxes are world-space and live in the brain). */
+export const GLUTTONOUS_SERPENT: MonsterDefinition = {
+  id: 'boss-gluttonous-serpent',
+  name: 'The Gluttonous Serpent',
+  level: 18,
+  stats: {
+    maxHp: SERPENT_TUNING.maxHp,
+    maxStamina: 0,
+    attack: 200,
+    defense: 60,
+    agility: 0,
+    critChance: 0,
+    critDamage: 0,
+    moveSpeed: 1,
+  },
+  hurtboxes: [],
+  drops: [],
+  respawnSeconds: 0,
+  tags: ['boss', 'gate-guardian', 'bramble-primeval'],
 };
 
 export const CRITICAL_STRIKE: SkillDefinition = {

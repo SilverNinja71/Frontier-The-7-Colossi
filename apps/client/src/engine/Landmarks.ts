@@ -1,3 +1,4 @@
+import type RAPIER from '@dimforge/rapier3d-compat';
 import { DeterministicRng } from '@frontier/combat-math';
 import * as THREE from 'three';
 import { fbm, ISLE, LAKE, LANDMARKS, STRUCTURES, WATER_LEVEL, type HeightGrid, type Landmark } from '../world/geography.ts';
@@ -33,6 +34,10 @@ export class Landmarks {
   readonly #lacquer = new THREE.MeshStandardMaterial({ color: '#b3362c', flatShading: true, roughness: 0.55 });
   readonly #gold = new THREE.MeshStandardMaterial({ color: '#d9b14c', flatShading: true, roughness: 0.35, metalness: 0.7 });
   readonly #flame = new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  readonly #iron = new THREE.MeshStandardMaterial({ color: '#2e2c2a', metalness: 0.7, roughness: 0.45, flatShading: true });
+  readonly #bone = new THREE.MeshStandardMaterial({ color: '#e6dcc4', roughness: 0.6, flatShading: true });
+  /** The Thornpass Gate: its portcullis and the collider that seals it until the serpent falls. */
+  #gate: { portcullis: THREE.Group; collider: RAPIER.Collider | null; open: number; target: number } | null = null;
 
   constructor(
     private readonly grid: HeightGrid,
@@ -47,6 +52,19 @@ export class Landmarks {
     this.#buildColonnade();
     this.#buildStoneCircle();
     this.#buildElderOak(kit);
+    this.#buildGullet();
+  }
+
+  /** Raise the Thornpass portcullis (it stays open for good once the serpent is slain). */
+  setGateOpen(open: boolean, instant = false): void {
+    const gate = this.#gate;
+    if (!gate) return;
+    gate.target = open ? 1 : 0;
+    if (instant) gate.open = gate.target;
+  }
+
+  get gateOpen(): boolean {
+    return (this.#gate?.target ?? 0) > 0;
   }
 
   setAttuned(id: string, attuned: boolean): void {
@@ -67,7 +85,16 @@ export class Landmarks {
     return { x, y: this.grid.sample(x, z), z };
   }
 
-  update(time: number, night: number): void {
+  update(time: number, night: number, dt = 0): void {
+    const gate = this.#gate;
+    if (gate) {
+      gate.open += Math.sign(gate.target - gate.open) * Math.min(Math.abs(gate.target - gate.open), dt * 0.35);
+      gate.portcullis.position.y = 0.2 + gate.open * 5.6;
+      if (gate.open > 0.9 && gate.collider) {
+        this.physics.world.removeCollider(gate.collider, false);
+        gate.collider = null;
+      }
+    }
     for (const stone of this.#waystones.values()) {
       stone.crystal.rotation.y = time * 0.8 + stone.phase;
       stone.crystal.position.y = 3.45 + Math.sin(time * 1.6 + stone.phase) * 0.12;
@@ -340,6 +367,92 @@ export class Landmarks {
     for (const side of [-1.1, 1.1]) this.#mesh(new THREE.BoxGeometry(0.6, 0.8, 1.2), this.#darkStone, cx + side, y + 0.4, cz);
     this.#mesh(new THREE.BoxGeometry(3.2, 0.3, 1.6), this.#darkStone, cx, y + 0.95, cz);
     this.physics.addStatic(this.physics.rapier.ColliderDesc.cuboid(1.6, 0.55, 0.8).setTranslation(cx, y + 0.55, cz));
+  }
+
+  /**
+   * The Gullet: the Thornpass Gate set into the north-east rim (sealed by a portcullis) with a
+   * dark tunnel behind it, and the bones of those who came before.
+   */
+  #buildGullet(): void {
+    const G = STRUCTURES.GULLET;
+    const floor = G.floor;
+    // Gate on the far side from the gorge road, facing the hollow.
+    const dist = G.radius + 0.5;
+    const gx = G.x + Math.SQRT1_2 * dist;
+    const gz = G.z - Math.SQRT1_2 * dist;
+    const gate = new THREE.Group();
+    gate.position.set(gx, floor, gz);
+    gate.rotation.y = Math.atan2(-Math.SQRT1_2, Math.SQRT1_2); // local +Z faces the hollow
+    for (const side of [-1, 1]) {
+      this.#mesh(new THREE.BoxGeometry(2.8, 9, 2.8), this.#darkStone, side * 4.3, 4.5, 0, gate);
+      for (let k = 0; k < 2; k++) {
+        this.#mesh(new THREE.BoxGeometry(0.8, 0.9, 0.8), this.#darkStone, side * 4.3 + (k ? 0.9 : -0.9), 9.45, 1, gate);
+      }
+      // Thorned iron spikes crowning each tower.
+      const spike = this.#mesh(new THREE.ConeGeometry(0.25, 1.4, 5), this.#iron, side * 4.3, 10.6, 0, gate);
+      spike.castShadow = true;
+    }
+    this.#mesh(new THREE.BoxGeometry(11.4, 1.8, 3), this.#darkStone, 0, 7.6, 0, gate);
+    // Tunnel mouth behind the bars.
+    const dark = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 6.8), new THREE.MeshBasicMaterial({ color: '#050403' }));
+    dark.position.set(0, 3.4, -1.6);
+    gate.add(dark);
+    const portcullis = new THREE.Group();
+    for (let i = 0; i <= 10; i++) {
+      const bar = this.#mesh(new THREE.CylinderGeometry(0.08, 0.08, 6.6, 6), this.#iron, -2.75 + i * 0.55, 3.3, 0.2, portcullis);
+      bar.castShadow = true;
+      const tip = this.#mesh(new THREE.ConeGeometry(0.12, 0.4, 5), this.#iron, -2.75 + i * 0.55, -0.15, 0.2, portcullis);
+      tip.rotation.x = Math.PI;
+    }
+    for (const y of [1.2, 3.3, 5.4]) this.#mesh(new THREE.BoxGeometry(5.9, 0.16, 0.16), this.#iron, 0, y, 0.2, portcullis);
+    portcullis.position.y = 0.2;
+    gate.add(portcullis);
+    this.group.add(gate);
+    gate.updateMatrixWorld(true);
+
+    const toWorld = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(gate.matrixWorld);
+    const q = new THREE.Quaternion().setFromEuler(gate.rotation);
+    const box = (x: number, y: number, z: number, hx: number, hy: number, hz: number) => {
+      const p = toWorld(x, y, z);
+      return this.physics.addStatic(
+        this.physics.rapier.ColliderDesc.cuboid(hx, hy, hz).setTranslation(p.x, p.y, p.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
+      );
+    };
+    box(-4.3, 4.5, 0, 1.4, 4.5, 1.4);
+    box(4.3, 4.5, 0, 1.4, 4.5, 1.4);
+    box(0, 3.4, -2.2, 3, 3.4, 0.3); // end of the charted world, behind the bars
+    const seal = box(0, 3.3, 0.2, 2.9, 3.3, 0.25);
+    this.#gate = { portcullis, collider: seal, open: 0, target: 0 };
+
+    // The ribcage of something it ate long ago, and the arms of those who followed.
+    const bearing = (300 * Math.PI) / 180;
+    const ribX = G.x + Math.sin(bearing) * 15;
+    const ribZ = G.z - Math.cos(bearing) * 15;
+    const cage = new THREE.Group();
+    cage.position.set(ribX, floor, ribZ);
+    cage.rotation.y = bearing + Math.PI / 2;
+    this.#mesh(new THREE.CylinderGeometry(0.22, 0.28, 9, 8), this.#bone, 0, 0.3, 0, cage).rotation.x = Math.PI / 2;
+    for (let i = 0; i < 7; i++) {
+      const rib = this.#mesh(new THREE.TorusGeometry(2.3 - Math.abs(i - 3) * 0.18, 0.14, 6, 20, Math.PI), this.#bone, 0, 0.1, -3.6 + i * 1.2, cage);
+      rib.rotation.set(0, 0, (i % 2 ? 0.08 : -0.06));
+    }
+    const skull = this.#mesh(new THREE.SphereGeometry(1.1, 10, 8), this.#bone, 0, 0.6, 5.2, cage);
+    skull.scale.set(1, 0.7, 1.4);
+    this.group.add(cage);
+    const rng = this.#rng;
+    for (let i = 0; i < 9; i++) {
+      const a = rng.next() * Math.PI * 2;
+      const r = 6 + rng.next() * (G.radius - 9);
+      const x = G.x + Math.sin(a) * r;
+      const z = G.z + Math.cos(a) * r;
+      if (i % 3 === 0) {
+        const blade = this.#mesh(new THREE.BoxGeometry(0.1, 1.5, 0.03), this.#iron, x, floor + 0.55, z);
+        blade.rotation.set((rng.next() - 0.5) * 0.6, rng.next() * 3, (rng.next() - 0.5) * 0.6);
+      } else {
+        const bone = this.#mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.9 + rng.next(), 6), this.#bone, x, floor + 0.08, z);
+        bone.rotation.set(Math.PI / 2, rng.next() * 3, 0);
+      }
+    }
   }
 
   /** The oldest tree in the wilds. */

@@ -17,6 +17,10 @@ import {
   SANDBOX_DAY_SECONDS,
   StalkerEvent,
   StalkerPhase,
+  SerpentEvent,
+  SerpentPhase,
+  serpentAttackResolved,
+  serpentStruck,
   stalkerAttackResolved,
   stalkerSawParry,
   stalkerTargetFell,
@@ -42,14 +46,17 @@ import { BladeTrail } from '../combat/BladeTrail.ts';
 import { CombatSystem } from '../combat/CombatSystem.ts';
 import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { HitSparks } from '../combat/HitSparks.ts';
+import { GluttonousSerpent } from '../combat/GluttonousSerpent.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
 import {
   loadDiscovered,
+  loadGullet,
   loadMarks,
   loadRecords,
   loadWeaponId,
   saveDiscovered,
+  saveGullet,
   saveMarks,
   saveRecords,
   saveWeaponId,
@@ -58,6 +65,7 @@ import {
 import {
   CRITICAL_STRIKE,
   FIRSTIA_TWIN_FANGS,
+  GLUTTONOUS_SERPENT,
   MARK_OF_THE_NIGHT_LYCAON,
   PLAYER_BASE_STATS,
   SANDBOX_WEAPONS,
@@ -70,6 +78,7 @@ import { announce, pushToast, useHud, type BossHud, type GameCommands, type Hunt
 import {
   ARENA_RADIUS,
   biomeAt,
+  GULLET,
   HeightGrid,
   inLake,
   LANDMARKS,
@@ -179,6 +188,9 @@ export class Game implements GameCommands {
   readonly #abort = new AbortController();
   #weapon: WeaponDefinition = SANDBOX_WEAPONS.find((w) => w.id === loadWeaponId()) ?? FIRSTIA_TWIN_FANGS;
   readonly #stalkerRng = new DeterministicRng(0x5ad0);
+  readonly #serpent: GluttonousSerpent;
+  readonly #serpentRng = new DeterministicRng(0x5e9e);
+  #gullet = loadGullet();
 
   #phase: 'title' | 'playing' | 'paused' = 'title';
   #adBreak = false;
@@ -280,6 +292,8 @@ export class Game implements GameCommands {
 
     this.#dummy = new TrainingDummy(this.#scene.scene, this.#physics, TRAINING_DUMMY, new THREE.Vector3(0, 0, 0));
     this.#stalker = new ShadowStalker(this.#scene.scene, this.#physics, overlayRoot);
+    this.#serpent = new GluttonousSerpent(this.#scene.scene, overlayRoot, GULLET);
+    this.#landmarks.setGateOpen(this.#gullet.gateOpen, true);
     this.#numbers = new DamageNumbers(overlayRoot);
     this.#reticle = new LockReticle(overlayRoot);
     this.#camera = new CameraRig(this.#scene.camera, this.#physics, [this.#player.collider, this.#stalker.collider]);
@@ -297,7 +311,7 @@ export class Game implements GameCommands {
       this.#player,
       this.#motorContext.moveset,
       DEFAULT_MOTOR_TUNING,
-      [this.#dummy, this.#stalker],
+      [this.#dummy, this.#stalker, this.#serpent.hitTarget],
       this.events,
       CRITICAL_STRIKE,
     );
@@ -480,7 +494,7 @@ export class Game implements GameCommands {
     const fz = -Math.cos(this.#camera.yaw);
     let best: Lockable | null = null;
     let bestScore = Infinity;
-    for (const candidate of [this.#stalker, this.#dummy] as Lockable[]) {
+    for (const candidate of [this.#serpent, this.#stalker, this.#dummy] as Lockable[]) {
       if (!candidate.targetable) continue;
       const dx = candidate.pose.x - pose.x;
       const dz = candidate.pose.z - pose.z;
@@ -531,6 +545,7 @@ export class Game implements GameCommands {
     this.#numbers.dispose();
     this.#reticle.dispose();
     this.#stalker.dispose();
+    this.#serpent.dispose();
     this.#scene.dispose();
   }
 
@@ -547,6 +562,8 @@ export class Game implements GameCommands {
       this.#recomputeStats();
       if (period === 'night') pushToast(moon === 'new' ? 'Night falls · a new moon' : 'Night falls', 'info');
       if (period === 'dawn') pushToast('Dawn breaks', 'info');
+      // The serpent regrows its scales overnight (the gate stays open).
+      if (period === 'dawn' && this.#serpent.slain) this.#serpent.revive();
     }
     const isNight = period === 'night';
     if (this.#phase === 'playing' && isNight && moon === 'new' && !this.#stalker.present && nightIndexAt(t) !== this.#stalkerNight) {
@@ -575,9 +592,10 @@ export class Game implements GameCommands {
     if (stalkerOutcome) this.#onStalkerOutcome(stalkerOutcome);
     const drillOutcome = this.#combat.resolveEnemyHit(this.#dummy, dummyResult.strike, TRAINING_DUMMY.stats);
     if (drillOutcome) this.#onDrillOutcome(drillOutcome);
+    this.#stepSerpent();
 
     // No natural healing mid-hunt, and every fall feeds it.
-    this.#player.regenBlocked = this.#stalker.present;
+    this.#player.regenBlocked = this.#stalker.present || this.#serpent.present;
     const dead = this.#player.dead;
     if (this.#loop.tick % DISCOVERY_INTERVAL_TICKS === 0 && !dead) this.#checkDiscovery();
     if (dead && !this.#wasDead) {
@@ -887,7 +905,7 @@ export class Game implements GameCommands {
     this.#daylight = this.#scene.setTime(renderTime, moonPhaseAt(renderTime));
     const night = 1 - this.#daylight;
     this.#arena.setNight(night, now);
-    this.#landmarks.update(now, night);
+    this.#landmarks.update(now, night, frameDt);
     this.#water.update(now, frameDt, this.#scene.horizonColor, this.#scene.lightDirection, this.#scene.sun.color, this.#daylight);
     this.kit?.tick(now);
     this.#audio.setNight(night);
@@ -932,6 +950,7 @@ export class Game implements GameCommands {
     const lockPoint = this.#lockTarget ? this.#lockTarget.lockPoint(this.#lockPoint) : null;
     this.#dummy.update(alpha, frameDt);
     this.#stalker.update(alpha, frameDt, this.#scene.camera, this.#renderPos);
+    this.#serpent.update(alpha, frameDt, this.#scene.camera);
     this.#sparks.update(frameDt);
     this.#camera.update(this.#renderPos, frameDt, motor.sprinting && motor.action === CharacterAction.Free, lockPoint);
     this.#scene.followShadow(this.#renderPos);
@@ -1073,6 +1092,123 @@ export class Game implements GameCommands {
     this.events.on('toast', ({ text, tone }) => pushToast(text, tone));
   }
 
+  // --- The Gluttonous Serpent ---------------------------------------------------------
+
+  /** Dev-only (window.__game in `npm run dev`): wound the serpent by a share of its health. */
+  debugHurtSerpent(fraction: number): void {
+    const { events } = serpentStruck(this.#serpent.brain, 'body', GLUTTONOUS_SERPENT.stats.maxHp * fraction);
+    this.#serpent.pendingEvents |= events;
+  }
+
+  #stepSerpent(): void {
+    const serpent = this.#serpent;
+    const player = this.#player;
+    const p = player.pose();
+    const inGullet = Math.hypot(p.x - GULLET.x, p.z - GULLET.z) < GULLET.radius - 4;
+    if (!serpent.present && !serpent.slain && inGullet && !player.dead && this.#phase === 'playing') {
+      this.#onSerpentEvents(serpent.wake(p));
+    }
+    let events = serpent.pendingEvents;
+    serpent.pendingEvents = 0;
+    if (serpent.present) {
+      const r = serpent.step({ target: p, targetAlive: !player.dead, targetInvulnerable: player.invulnerable, rng: this.#serpentRng, dt: SIM_DT });
+      events |= r.events;
+      if (r.shoveX || r.shoveZ) player.shove(r.shoveX, r.shoveZ);
+      const outcome = this.#combat.resolveEnemyHit(serpent, r.hit, GLUTTONOUS_SERPENT.stats);
+      if (outcome) events |= serpentAttackResolved(serpent.brain, outcome);
+      if (r.hit?.attack.kind === 'tail' && serpent.brain.phaseTick === serpent.brain.windupTicks) {
+        this.#audio.play('slam', { x: r.hit.pose.x, y: r.hit.pose.y + 0.5, z: r.hit.pose.z }, 0.8);
+        this.#camera.addTrauma(0.3);
+      }
+      if (r.acid && !player.dead) {
+        const amount = Math.round(player.maxHp * 0.025);
+        player.applyDamage(amount);
+        this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 1.8), `-${amount}`, 'player');
+        this.#audio.play('hiss', { x: p.x, y: p.y + 0.3, z: p.z }, 0.5);
+      }
+      if (events & SerpentEvent.Swallowed) {
+        const amount = Math.round(player.maxHp * 0.4);
+        if (player.takeDamage(amount, 40)) this.events.emit('playerDamaged', { amount, staggered: !player.dead });
+        pushToast('SWALLOWED!', 'danger');
+      }
+    }
+    if (events) this.#onSerpentEvents(events);
+  }
+
+  #onSerpentEvents(flags: number): void {
+    const serpent = this.#serpent;
+    const at = { x: serpent.pose.x, y: serpent.pose.y + 1.4, z: serpent.pose.z };
+    if (flags & SerpentEvent.Awoke) {
+      announce(
+        'Gate Guardian · The Gullet',
+        'The Gluttonous Serpent',
+        'Parry its bite to stun the head. Stay off the tail. Never stand before it when it inhales.',
+      );
+      this.#audio.play('growl', at, 1.4);
+      this.#audio.play('hiss', at, 1.2);
+      this.#camera.addTrauma(0.5);
+    }
+    if (flags & SerpentEvent.TelegraphParryable) this.#audio.play('hiss', at, 0.7);
+    if (flags & SerpentEvent.TelegraphPerilous) this.#audio.play('growl', at, 1.0);
+    if (flags & SerpentEvent.Inhale) this.#audio.play('inhale', at, 1.2);
+    if (flags & SerpentEvent.Spat) this.#audio.play('spit', at);
+    if (flags & SerpentEvent.Swallowed) {
+      this.#audio.play('gulp', at, 1.2);
+      this.#camera.addTrauma(0.7);
+    }
+    if (flags & SerpentEvent.HeadStunned) {
+      pushToast('HEAD STUNNED · STRIKE THE HEAD', 'gold');
+      this.#audio.play('crit', at);
+      this.#camera.addTrauma(0.3);
+    }
+    if (flags & SerpentEvent.Frenzy) {
+      announce('Frenzy', 'The Gluttonous Serpent rages', 'Its hood flares. It bites twice now, and its bile spreads.');
+      this.#audio.play('howl', at, 1.1);
+      this.#camera.addTrauma(0.4);
+    }
+    if (flags & SerpentEvent.Retreated) pushToast('The serpent sinks back into the gravel', 'info');
+    if (flags & SerpentEvent.Slain) {
+      const first = !this.#gullet.gateOpen;
+      this.#gullet = { gateOpen: true, slain: this.#gullet.slain + 1 };
+      saveGullet(this.#gullet);
+      this.#landmarks.setGateOpen(true);
+      announce(
+        first ? 'Gate Guardian slain' : 'The Gluttonous Serpent falls again',
+        'The Thornpass Gate opens',
+        first ? 'The way beyond the Bramble Primeval lies open.' : 'It will regrow its scales by dawn.',
+      );
+      this.#audio.play('gong');
+      this.platform.happytime();
+      if (this.#lockTarget === (this.#serpent as unknown as Lockable)) this.#setLock(null);
+    }
+  }
+
+  #serpentHud(): BossHud {
+    const b = this.#serpent.brain;
+    const status: BossHud['status'] =
+      b.phase === SerpentPhase.Rising
+        ? 'emerging'
+        : b.phase === SerpentPhase.Stunned
+          ? 'stunned'
+          : b.phase === SerpentPhase.Retreating
+            ? 'fading'
+            : b.attack?.kind === 'devour'
+              ? 'devouring'
+              : 'hunting';
+    return {
+      visible: true,
+      kind: 'serpent',
+      name: GLUTTONOUS_SERPENT.name,
+      title: 'Gate Guardian · The Gullet',
+      resolve: b.hp,
+      maxResolve: GLUTTONOUS_SERPENT.stats.maxHp,
+      chain: 0,
+      chainGoal: 0,
+      eclipsed: b.frenzy,
+      status,
+    };
+  }
+
   #checkDiscovery(): void {
     const p = this.#player.pose();
     for (const landmark of LANDMARKS) {
@@ -1152,8 +1288,9 @@ export class Game implements GameCommands {
         drillStreak: this.#dummy.drillStreak,
         drillBest: this.#dummy.drillBest,
       },
-      boss: {
+      boss: this.#serpent.present ? this.#serpentHud() : {
         visible: this.#stalker.present,
+        kind: 'stalker',
         name: SHADOW_STALKER.name,
         title: SHADOW_STALKER.title,
         resolve: brain.resolve,

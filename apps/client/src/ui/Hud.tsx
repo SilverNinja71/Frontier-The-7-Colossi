@@ -791,42 +791,73 @@ const BOSS_STATUS: Record<HudState['boss']['status'], { label: string; className
   exposed: { label: 'Exposed: strike the heart', className: 'animate-pulse border-amber-300 bg-amber-500/25 text-amber-100' },
   subdued: { label: 'Subdued', className: 'border-emerald-300/60 text-emerald-200' },
   fading: { label: 'Fading with the dawn', className: 'border-white/20 text-white/50' },
+  stunned: { label: 'Head stunned: strike it!', className: 'animate-pulse border-amber-300 bg-amber-500/25 text-amber-100' },
+  devouring: { label: 'Inhaling: get out of its path', className: 'animate-pulse border-rose-400 bg-rose-600/25 text-rose-100' },
+  slain: { label: 'Slain', className: 'border-emerald-300/60 text-emerald-200' },
 };
+
+/** Per-boss styling: the Stalker is violet and parry-driven; the Serpent is green and bleeds. */
+const BOSS_STYLE = {
+  stalker: {
+    kicker: 'Unique Colossus',
+    kickerClass: 'text-violet-300/90',
+    nameClass: 'text-violet-50',
+    bar: 'from-violet-800 via-violet-500 to-fuchsia-400',
+    frame: 'shadow-[0_0_0_1px_rgba(196,181,253,0.3)]',
+    badge: 'ECLIPSE',
+    badgeClass: 'border-fuchsia-400/70 bg-fuchsia-700/40 text-fuchsia-100',
+  },
+  serpent: {
+    kicker: 'Gate Guardian · The Gullet',
+    kickerClass: 'text-lime-300/90',
+    nameClass: 'text-lime-50',
+    bar: 'from-emerald-900 via-lime-600 to-amber-300',
+    frame: 'shadow-[0_0_0_1px_rgba(190,242,100,0.3)]',
+    badge: 'FRENZY',
+    badgeClass: 'border-rose-400/70 bg-rose-700/40 text-rose-100',
+  },
+} as const;
 
 function BossFrame() {
   const boss = useHud((s) => s.boss);
   const pct = (boss.resolve / boss.maxResolve) * 100;
-  const status = BOSS_STATUS[boss.status];
+  const style = BOSS_STYLE[boss.kind];
+  const status =
+    boss.kind === 'serpent' && boss.status === 'hunting'
+      ? { label: 'Parry its bite to stun the head', className: 'border-white/20 text-white/70' }
+      : BOSS_STATUS[boss.status];
   return (
     <div className="fixed left-1/2 top-[max(0.6rem,env(safe-area-inset-top))] w-[min(34rem,60vw)] -translate-x-1/2 text-center max-sm:w-[56vw]">
-      <div className="text-[10px] font-semibold tracking-[0.45em] text-violet-300/90 uppercase [text-shadow:0_1px_3px_#000]">
-        Unique Colossus
-      </div>
-      <div className="font-display text-lg tracking-[0.25em] text-violet-50 uppercase [text-shadow:0_2px_8px_#000] sm:text-xl">
+      <div className={`text-[10px] font-semibold tracking-[0.45em] uppercase [text-shadow:0_1px_3px_#000] ${style.kickerClass}`}>{style.kicker}</div>
+      <div className={`font-display text-lg tracking-[0.25em] uppercase [text-shadow:0_2px_8px_#000] sm:text-xl ${style.nameClass}`}>
         {boss.name}
         {boss.eclipsed && (
-          <span className="ml-2 inline-block -translate-y-0.5 rounded border border-fuchsia-400/70 bg-fuchsia-700/40 px-1.5 py-0.5 align-middle font-sans text-[10px] font-bold tracking-widest text-fuchsia-100">
-            ECLIPSE
+          <span className={`ml-2 inline-block -translate-y-0.5 rounded border px-1.5 py-0.5 align-middle font-sans text-[10px] font-bold tracking-widest ${style.badgeClass}`}>
+            {style.badge}
           </span>
         )}
       </div>
-      <div className="relative mt-1 h-3 overflow-hidden rounded-sm border border-black/70 bg-black/70 shadow-[0_0_0_1px_rgba(196,181,253,0.3)]">
+      <div className={`relative mt-1 h-3 overflow-hidden rounded-sm border border-black/70 bg-black/70 ${style.frame}`}>
         <div className="absolute inset-y-0 left-0 bg-white/60 transition-[width] delay-200 duration-700" style={{ width: `${pct}%` }} />
-        <div
-          className="absolute inset-y-0 left-0 bg-gradient-to-r from-violet-800 via-violet-500 to-fuchsia-400 transition-[width] duration-150"
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`absolute inset-y-0 left-0 bg-gradient-to-r transition-[width] duration-150 ${style.bar}`} style={{ width: `${pct}%` }} />
+        {boss.kind === 'serpent' && <div className="absolute inset-y-0 left-1/2 w-px bg-rose-300/80" title="Frenzy at half health" />}
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
-        <div className="flex items-center gap-1.5 [text-shadow:0_1px_3px_#000]">
-          <span className="text-white/60">Parry chain</span>
-          {Array.from({ length: boss.chainGoal }, (_, i) => (
-            <span
-              key={i}
-              className={`h-2.5 w-2.5 rotate-45 border ${i < boss.chain ? 'border-amber-200 bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]' : 'border-white/40 bg-black/40'}`}
-            />
-          ))}
-        </div>
+        {boss.kind === 'stalker' ? (
+          <div className="flex items-center gap-1.5 [text-shadow:0_1px_3px_#000]">
+            <span className="text-white/60">Parry chain</span>
+            {Array.from({ length: boss.chainGoal }, (_, i) => (
+              <span
+                key={i}
+                className={`h-2.5 w-2.5 rotate-45 border ${i < boss.chain ? 'border-amber-200 bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]' : 'border-white/40 bg-black/40'}`}
+              />
+            ))}
+          </div>
+        ) : (
+          <span className="tabular-nums text-white/70 [text-shadow:0_1px_3px_#000]">
+            {Math.ceil(boss.resolve).toLocaleString()} / {boss.maxResolve.toLocaleString()}
+          </span>
+        )}
         <span className={`rounded border px-2 py-0.5 font-semibold tracking-wide uppercase ${status.className}`}>{status.label}</span>
       </div>
     </div>

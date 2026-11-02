@@ -7,3 +7,4 @@ export * from './hit-registration.ts';
 export * from './skills.ts';
 export * from './world-clock.ts';
 export * from './shadow-stalker.ts';
+export * from './serpent.ts';

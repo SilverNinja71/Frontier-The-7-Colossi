@@ -31,6 +31,8 @@ const COLONNADE = { x: -24, z: 192, radius: 30, height: 3.2 };
 const GLOAM = { x: -212, z: -18, radius: 105 };
 const MOONLESS_CIRCLE = { x: -214, z: -20, radius: 16 };
 const MEADOW_HILL = { x: 168, z: 176, radius: 46, height: 6 };
+/** The Gluttonous Serpent's lair at the end of Windcut Gorge, before the Thornpass Gate. */
+export const GULLET = { x: 210, z: -210, radius: 24, floor: 9.5 };
 
 /** Dirt roads from the arena gates out to the landmarks. */
 export const ROADS: readonly (readonly Point[])[] = [
@@ -130,6 +132,15 @@ export const LANDMARKS: readonly Landmark[] = [
     stone: { x: MOONLESS_CIRCLE.x + 17, z: MOONLESS_CIRCLE.z + 3 },
   },
   {
+    id: 'the-gullet',
+    name: 'The Gullet',
+    blurb: 'Bones in the gravel, and a gate that will not open while its keeper lives.',
+    x: GULLET.x,
+    z: GULLET.z,
+    radius: 18,
+    stone: { x: 191, z: -185 },
+  },
+  {
     id: 'elder-oak',
     name: 'The Elder Oak',
     blurb: 'The oldest tree in the wilds, and the widest shade.',
@@ -140,7 +151,7 @@ export const LANDMARKS: readonly Landmark[] = [
   },
 ];
 
-export const STRUCTURES = { RIDGE, GORGE, COLONNADE, GLOAM, MOONLESS_CIRCLE, MEADOW_HILL };
+export const STRUCTURES = { RIDGE, GORGE, COLONNADE, GLOAM, MOONLESS_CIRCLE, MEADOW_HILL, GULLET };
 
 // --- Height --------------------------------------------------------------------------
 
@@ -222,6 +233,18 @@ export function baseHeight(x: number, z: number): number {
   // The world's edge: mountains that cannot be climbed.
   const edge = smoothstep(PLAYABLE_RADIUS - 10, PLAYABLE_RADIUS + 70, r);
   if (edge > 0) h += edge * (48 + fbm(x * 0.02 + 70, z * 0.02 + 30) * 40) + edge * edge * 20;
+
+  // The Gullet: a level gravel floor walled in by the mesa and the mountains.
+  const gullet = Math.hypot(x - GULLET.x, z - GULLET.z);
+  if (gullet < GULLET.radius + 18) {
+    // A rim of rock all round, open only towards the gorge road (south-west).
+    const toward = gullet > 1e-3 ? (-(x - GULLET.x) + (z - GULLET.z)) / (gullet * Math.SQRT2) : 0;
+    const open = smoothstep(0.82, 0.95, toward);
+    const rim = smoothstep(GULLET.radius + 1, GULLET.radius + 6, gullet) * (1 - smoothstep(GULLET.radius + 11, GULLET.radius + 18, gullet));
+    const crag = (fbm(x * 0.12 + 7, z * 0.12 - 3) - 0.5) * 5;
+    h = Math.max(h, GULLET.floor + rim * (13 + crag) * (1 - open));
+    h = mix(h, GULLET.floor, 1 - smoothstep(GULLET.radius, GULLET.radius + 7, gullet));
+  }
 
   // The arena floor is exactly level (gameplay assumes y = 0 inside the ring).
   const arena = 1 - smoothstep(ARENA_RADIUS + 2.5, ARENA_RADIUS + 14, r);

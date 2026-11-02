@@ -66,6 +66,8 @@ export interface HuntReport {
 
 export interface BossHud {
   visible: boolean;
+  /** Which colossus or guardian the frame is showing. */
+  kind: 'stalker' | 'serpent';
   name: string;
   title: string;
   resolve: number;
@@ -74,7 +76,7 @@ export interface BossHud {
   chainGoal: number;
   /** Second phase: faster, relentless. */
   eclipsed: boolean;
-  status: 'emerging' | 'hunting' | 'exposed' | 'subdued' | 'fading';
+  status: 'emerging' | 'hunting' | 'exposed' | 'subdued' | 'fading' | 'stunned' | 'devouring' | 'slain';
 }
 
 export interface Announcement {
@@ -184,7 +186,7 @@ export const useHud = create<HudState>()(() => ({
     drillBest: 0,
   },
   combo: { count: 0, at: 0 },
-  boss: { visible: false, name: '', title: '', resolve: 1, maxResolve: 1, chain: 0, chainGoal: 3, eclipsed: false, status: 'hunting' },
+  boss: { visible: false, kind: 'stalker', name: '', title: '', resolve: 1, maxResolve: 1, chain: 0, chainGoal: 3, eclipsed: false, status: 'hunting' },
   clock: { period: 'day', moon: 'full', night: 0 },
   announcement: null,
   marks: [],

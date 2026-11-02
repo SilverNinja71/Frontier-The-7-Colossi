@@ -5,6 +5,7 @@ import {
   CELL_SIZE,
   fbm,
   GRID_CELLS,
+  GULLET,
   inLake,
   roadAt,
   smoothstep,
@@ -201,6 +202,7 @@ export class Terrain {
         let dirt = roadAt(x, z, road).weight * 0.95;
         dirt += biome.gloam * smoothstep(0.55, 0.7, patch) * 0.8;
         dirt += smoothstep(ARENA_RADIUS + 9, ARENA_RADIUS + 1.5, r) * 0.5; // trampled ground at the wall
+        dirt += 1 - smoothstep(GULLET.radius - 1, GULLET.radius + 2, Math.hypot(x - GULLET.x, z - GULLET.z)); // the Gullet's gravel
         let sand = 1 - smoothstep(ARENA_RADIUS + 0.5, ARENA_RADIUS + 2.5, r);
         if (inLake(x, z)) sand += 1 - smoothstep(WATER_LEVEL + 0.35, WATER_LEVEL + 1.1, h);
         const snow = smoothstep(40, 50, h + patch * 6) * smoothstep(0.12, 0.3, up - 0.55);

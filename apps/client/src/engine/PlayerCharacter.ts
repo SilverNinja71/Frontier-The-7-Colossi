@@ -50,6 +50,8 @@ export class PlayerCharacter {
   tick = 0;
   lastParryStartTick = Number.NEGATIVE_INFINITY;
   #lastStep: MotorStepResult = { velX: 0, velZ: 0, events: 0 };
+  /** External displacement for the next tick (a boss dragging or shoving you), metres. */
+  readonly #shove = { x: 0, z: 0 };
 
   /** Where the next respawn happens (the nearest attuned waystone, set by the game). */
   spawn: Vec3;
@@ -108,6 +110,7 @@ export class PlayerCharacter {
     this.tick++;
 
     if (this.dead) {
+      this.#shove.x = this.#shove.z = 0;
       if (this.motor.actionTick++ >= RESPAWN_TICKS) this.#respawn();
       this.#lastStep = { velX: 0, velZ: 0, events: 0 };
       return this.#lastStep;
@@ -119,10 +122,11 @@ export class PlayerCharacter {
 
     this.#verticalVelocity = this.#grounded ? -2 : Math.max(-40, this.#verticalVelocity - GRAVITY * dt);
     this.#controller.computeColliderMovement(this.collider, {
-      x: result.velX * dt,
+      x: result.velX * dt + this.#shove.x,
       y: this.#verticalVelocity * dt,
-      z: result.velZ * dt,
+      z: result.velZ * dt + this.#shove.z,
     });
+    this.#shove.x = this.#shove.z = 0;
     const movement = this.#controller.computedMovement();
     this.#grounded = this.#controller.computedGrounded();
     const t = this.body.translation();
@@ -180,7 +184,13 @@ export class PlayerCharacter {
     return Math.hypot(this.#curr.x - this.#prev.x, this.#curr.z - this.#prev.z) / this.motorContext.dt;
   }
 
-  /** Fast travel: appear at a point, facing `yaw`, with nothing carried over. */
+  /** Move the character by this much on the next tick, through collision (drag, push). */
+  shove(dx: number, dz: number): void {
+    this.#shove.x += dx;
+    this.#shove.z += dz;
+  }
+
+  /** Place the character at a point, facing `yaw`, with nothing carried over. */
   teleport(to: Vec3, yaw: number): void {
     this.body.setTranslation({ x: to.x, y: to.y + FEET_OFFSET + 0.05, z: to.z }, true);
     this.#verticalVelocity = 0;

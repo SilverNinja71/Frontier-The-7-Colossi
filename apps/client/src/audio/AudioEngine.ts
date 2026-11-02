@@ -15,7 +15,11 @@ export type Sfx =
   | 'howl'
   | 'slam'
   | 'gong'
-  | 'discover';
+  | 'discover'
+  | 'hiss'
+  | 'inhale'
+  | 'gulp'
+  | 'spit';
 
 type Dest = AudioNode;
 
@@ -200,6 +204,23 @@ export class AudioEngine {
           this.#tone(dest, t + i * 0.11, 'sine', f, f, 1.4, 0.12 * k, 0.01);
           this.#tone(dest, t + i * 0.11, 'triangle', f * 2.01, f * 2.01, 0.5, 0.03 * k, 0.005);
         });
+        break;
+      case 'hiss':
+        // A serpent's rasp: bright noise with a slow swell.
+        this.#noiseSweep(dest, t, 0.55, 'highpass', 3200, 5200, 0.6, 0.22 * k);
+        this.#noiseSweep(dest, t + 0.05, 0.45, 'bandpass', 5000, 3800, 2, 0.12 * k);
+        break;
+      case 'inhale':
+        this.#noiseSweep(dest, t, 1.4, 'bandpass', 220, 1400, 1.4, 0.4 * k);
+        this.#tone(dest, t, 'sawtooth', 55, 80, 1.3, 0.08 * k, 0.3, 300);
+        break;
+      case 'gulp':
+        this.#tone(dest, t, 'sine', 140, 45, 0.35, 0.8 * k);
+        this.#noiseSweep(dest, t, 0.2, 'lowpass', 600, 150, 0.8, 0.4 * k);
+        break;
+      case 'spit':
+        this.#noiseSweep(dest, t, 0.22, 'bandpass', 1800, 600, 1.2, 0.35 * k);
+        this.#tone(dest, t + 0.02, 'sine', 320, 120, 0.15, 0.15 * k);
         break;
       case 'gong':
         for (const [f, g] of [

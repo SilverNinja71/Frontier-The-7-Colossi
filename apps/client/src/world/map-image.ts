@@ -1,4 +1,4 @@
-import { biomeAt, CELL_SIZE, inLake, roadAt, WATER_LEVEL, WORLD_HALF, type Biome, type HeightGrid } from './geography.ts';
+import { biomeAt, CELL_SIZE, GULLET, inLake, roadAt, WATER_LEVEL, WORLD_HALF, type Biome, type HeightGrid } from './geography.ts';
 
 /**
  * Paints the world map (RGBA, north up) from the height grid: hypsometric tints, hill
@@ -50,6 +50,11 @@ export function renderMapPixels(grid: HeightGrid, size: number): Uint8ClampedArr
           r = 214;
           g = 190;
           b = 140;
+        }
+        if (Math.hypot(x - GULLET.x, z - GULLET.z) < GULLET.radius + 1) {
+          r = 150;
+          g = 138;
+          b = 118;
         }
         const w = roadAt(x, z, road).weight;
         if (w > 0.4) {
