@@ -1,21 +1,21 @@
 // swift-tools-version: 6.0
 
-// App Playground package: double-click Frontier.swiftpm to open it in Xcode, or open it in
+// App Playground package: double-click SovereignFrontier.swiftpm to open it in Xcode, or open it in
 // Swift Playgrounds on an iPad or Mac. Runs on iPad and on Apple-silicon Macs.
 
 import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "Frontier",
+    name: "SovereignFrontier",
     platforms: [
         .iOS("17.0")
     ],
     products: [
         .iOSApplication(
-            name: "Frontier of the Colossi",
+            name: "Sovereign Frontier",
             targets: ["AppModule"],
-            bundleIdentifier: "com.frontier.sevencolossi",
+            bundleIdentifier: "com.sovereignfrontier.app",
             teamIdentifier: "",
             displayVersion: "0.1",
             bundleVersion: "1",

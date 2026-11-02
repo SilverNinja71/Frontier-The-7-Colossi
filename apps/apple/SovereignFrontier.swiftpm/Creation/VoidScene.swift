@@ -2,10 +2,10 @@ import CoreGraphics
 import QuartzCore
 import SceneKit
 
-/// The 3D half of the Azure Chamber: an endless cobalt void with fog, cyan motes drifting
+/// The 3D half of the Azure Void: an endless cobalt expanse (#050d1a) with fog, cyan motes drifting
 /// upwards, and a glass dais with pulsing runes on which the pioneer turns.
 @MainActor
-final class ChamberScene {
+final class VoidScene {
     let scene = SCNScene()
     let camera = SCNNode()
     private let turntable = SCNNode()
@@ -14,8 +14,8 @@ final class ChamberScene {
     private var dragBaseYaw: Float = 0
 
     init() {
-        scene.background.contents = Self.gradientImage(top: PaletteColor(0x061121), middle: PaletteColor(0x0d284d), bottom: PaletteColor(0x02070f))
-        scene.fogColor = PaletteColor(0x0a1d38).cgColor
+        scene.background.contents = Self.gradientImage(top: PaletteColor(0x050d1a), middle: PaletteColor(0x0b2244), bottom: PaletteColor(0x02060d))
+        scene.fogColor = PaletteColor(0x081a33).cgColor
         scene.fogStartDistance = 7
         scene.fogEndDistance = 26
         scene.fogDensityExponent = 1.4

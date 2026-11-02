@@ -1,4 +1,4 @@
-# Frontier of the Colossi
+# Sovereign Frontier
 
 Web-first 3D action MMORPG — hardcore exploration, high-stakes combat, zero pay-to-win.
 This repository is the **Phase 1** foundation: monorepo, shared contracts, deterministic combat
@@ -6,7 +6,9 @@ core, a playable training-grounds sandbox inside an explorable 600 m world, a Cr
 integration, and the start of a native Apple client (`apps/apple`).
 
 The world, its places and its colossi are original. Post-apocalyptic fantasy: a medieval
-frontier built over the buried ruins of the Age of Ancients.
+frontier built over the buried ruins of the Age of Ancients. Zone 1 is the First Bastion, a
+walled starting town (the arena), and Zone 2 the Bramble Primeval around it (its gate boss,
+the Gluttonous Serpent, is planned).
 
 ## Quick start
 
@@ -154,7 +156,7 @@ Things to try:
   then flashes white just before impact, with random hesitations. Every attempt tells you
   **EARLY · n ms** or **LATE · n ms**, and the frame tracks your perfect-parry streak.
 
-## The Bramble Wilds (exploration)
+## The Bramble Primeval (exploration)
 
 Walk out of any arena gate. The world is 768 m across with about 600 m of walkable land
 inside a ring of mountains, built from one deterministic height function
@@ -300,8 +302,8 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Native Apple client (early)
 
-`apps/apple/Frontier.swiftpm` is an Xcode App Playground (Swift 6, SwiftUI, SceneKit): double-click
-it on a Mac, or open it in Swift Playgrounds on an iPad. It has the Azure Chamber character creator
+`apps/apple/SovereignFrontier.swiftpm` is an Xcode App Playground (Swift 6, SwiftUI, SceneKit): double-click
+it on a Mac, or open it in Swift Playgrounds on an iPad. It has the Azure Void character creator
 (name and appearance, 8 origins, 8 jobs with advancement paths, a turning 3D preview on a glass
 dais in a cobalt void), a deterministic 60 Hz `CharacterController` (camera-relative movement,
 dodge i-frames, a 12-frame parry window with slow motion) and a proving ground to try it. See

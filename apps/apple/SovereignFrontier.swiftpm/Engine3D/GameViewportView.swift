@@ -2,7 +2,7 @@ import Observation
 import SceneKit
 import SwiftUI
 
-/// First playable slice of the native client: the pioneer from the Azure Chamber on a
+/// First playable slice of the native client: the pioneer from the Azure Void on a
 /// proving ground with a sparring post that swings every few seconds. Use it to feel the
 /// controller: camera-relative movement, dodge i-frames and the 12-frame parry window.
 /// (The full world streams in here later via WorldZoneManager.)
@@ -99,7 +99,10 @@ final class ProvingGround {
         started = true
         buildScene()
         controller = CharacterController(position: SIMD3(0, 0, 4), facingYaw: 0)
-        controller.speedMultiplier = 1 + Float(profile.origin.bonuses.agility) * 0.5
+        let bonuses = profile.origin.bonuses
+        controller.speedMultiplier = 1 + Float(bonuses.agility) * 0.5
+        controller.sprintStaminaMultiplier = 1 + Float(bonuses.sprintStaminaCost)
+        controller.poise = Float(bonuses.poise)
         playerNode = PioneerFigure.make(appearance: profile.appearance, origin: profile.origin, job: profile.job)
         scene.rootNode.addChildNode(playerNode)
         syncNodes(alpha: 1)

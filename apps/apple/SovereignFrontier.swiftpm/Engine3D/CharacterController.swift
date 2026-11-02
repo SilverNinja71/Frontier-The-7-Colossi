@@ -70,8 +70,12 @@ struct CharacterController: Sendable {
     }
 
     let tuning: CharacterTuning
-    /// From the origin (Beast Child +10%) and gear.
+    /// From the origin (Feral Scion's agility) and gear.
     var speedMultiplier: Float = 1
+    /// Feral Scion: 0.8 (sprinting drains 20% less).
+    var sprintStaminaMultiplier: Float = 1
+    /// The Unbroken: 0.05 shortens every stagger by 5%.
+    var poise: Float = 0
 
     private(set) var position: SIMD3<Float>
     private(set) var velocity: SIMD3<Float> = .zero
@@ -169,7 +173,7 @@ struct CharacterController: Sendable {
                 facingYaw = Self.turn(facingYaw, towards: Self.yaw(facing: wish), maxStep: tuning.turnRate * dt)
             }
             if sprinting, simdLength(SIMD2(velocity.x, velocity.z)) > 1 {
-                spend(tuning.sprintStaminaPerSecond * dt, events: &events)
+                spend(tuning.sprintStaminaPerSecond * sprintStaminaMultiplier * dt, events: &events)
             }
             state = simdLength(SIMD2(velocity.x, velocity.z)) > 0.15 ? .moving : .idle
         }
@@ -208,7 +212,7 @@ struct CharacterController: Sendable {
     }
 
     mutating func stun(frames: Int) {
-        state = .stunned(framesLeft: frames)
+        state = .stunned(framesLeft: max(1, Int((Float(frames) * (1 - poise)).rounded())))
         buffered = nil
     }
 

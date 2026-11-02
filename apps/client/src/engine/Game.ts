@@ -220,7 +220,7 @@ export class Game implements GameCommands {
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
     const [rapier, kit] = await Promise.all([loadRapier(), NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`)]);
-    onProgress('Shaping the Bramble Wilds…');
+    onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
@@ -1070,7 +1070,7 @@ export class Game implements GameCommands {
     const found = this.#discovered.size;
     announce(`Discovered · ${found}/${LANDMARKS.length}`, landmark.name, `${landmark.blurb} Its waystone wakes: you will rise here.`);
     this.#audio.play('discover');
-    if (found === LANDMARKS.length) pushToast('Every corner of the Bramble Wilds found', 'gold');
+    if (found === LANDMARKS.length) pushToast('Every corner of the Bramble Primeval found', 'gold');
   }
 
   #regionName(x: number, z: number, y: number): string {
@@ -1083,7 +1083,7 @@ export class Game implements GameCommands {
     if (b.highland > 0.5) return 'Howling Ridge';
     if (b.amber > 0.5) return 'Amber Meadow';
     if (b.forest > 0.5) return 'Bramble Woods';
-    return 'The Bramble Wilds';
+    return 'The Bramble Primeval';
   }
 
   /** Paint the world map once, off the critical path. */

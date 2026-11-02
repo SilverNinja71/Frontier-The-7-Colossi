@@ -4,11 +4,12 @@ import Foundation
 /// Fractions: 0.15 means +15%; negative values are reductions.
 struct AttributeBonuses: Equatable, Codable, Sendable {
     var luck: Double = 0
-    var vitality: Double = 0
+    var maxHP: Double = 0
     var agility: Double = 0
     var maxMana: Double = 0
     var castSpeed: Double = 0
-    var physicalDefense: Double = 0
+    /// Resistance to being staggered: shortens hit-stun by the same share.
+    var poise: Double = 0
     var bladeAttackSpeed: Double = 0
     /// Stamina spent while sprinting. -0.2 = sprinting costs 20% less.
     var sprintStaminaCost: Double = 0
@@ -27,11 +28,11 @@ struct AttributeBonuses: Equatable, Codable, Sendable {
     var summaryLines: [String] {
         let entries: [(String, Double)] = [
             ("Luck", luck),
-            ("Vitality & HP", vitality),
+            ("Max HP", maxHP),
             ("Agility", agility),
             ("Max Mana", maxMana),
             ("Cast Speed", castSpeed),
-            ("Physical Defense", physicalDefense),
+            ("Physical Poise", poise),
             ("Sword & Dagger Speed", bladeAttackSpeed),
             ("Sprint Stamina Cost", sprintStaminaCost),
             ("Monster Notice Radius", aggroRadius),
@@ -79,15 +80,15 @@ struct EquipmentItem: Identifiable, Equatable, Codable, Sendable {
 /// Where a new pioneer first opens their eyes. Coordinates are in the shared world space
 /// (metres, +x east, -z north; see apps/client/src/world/geography.ts).
 enum SpawnPoint: String, Codable, Sendable {
-    case brambleWilds
-    case bastionSquare
+    case bramblePrimeval
+    case bastionPlaza
     case bastionGarrison
     case bastionTrainingGrounds
 
     var displayName: String {
         switch self {
-        case .brambleWilds: "The Bramble Wilds — edge of the Gloamwood"
-        case .bastionSquare: "The First Bastion — Town Square"
+        case .bramblePrimeval: "The Bramble Primeval — edge of the Gloamwood"
+        case .bastionPlaza: "The First Bastion — Plaza"
         case .bastionGarrison: "The First Bastion — Garrison"
         case .bastionTrainingGrounds: "The First Bastion — Training Grounds"
         }
@@ -96,28 +97,28 @@ enum SpawnPoint: String, Codable, Sendable {
     /// Feet position in world space.
     var position: SIMD3<Float> {
         switch self {
-        case .brambleWilds: SIMD3(-150, 0, -14)
-        case .bastionSquare: SIMD3(0, 0, 7)
+        case .bramblePrimeval: SIMD3(-150, 0, -14)
+        case .bastionPlaza: SIMD3(0, 0, 7)
         case .bastionGarrison: SIMD3(6, 0, 42)
         case .bastionTrainingGrounds: SIMD3(0, 0, 12)
         }
     }
 
     /// True when the pioneer starts outside the town walls (no tutorial safety net).
-    var skipsTown: Bool { self == .brambleWilds }
+    var skipsTown: Bool { self == .bramblePrimeval }
 }
 
-/// The background a pioneer chooses in the Azure Chamber. Each sets passive bonuses,
+/// The background a pioneer chooses in the Azure Void. Each sets passive bonuses,
 /// starting equipment and where the adventure begins.
 enum PlayerOrigin: String, CaseIterable, Identifiable, Codable, Sendable {
     case drifter
     case nobleBlood
-    case untamedHero
-    case beastChild
+    case unbroken
+    case feralScion
     case bladeDisciple
-    case commoner
-    case optimist
-    case opportunist
+    case pragmatist
+    case resolute
+    case merchant
 
     var id: String { rawValue }
 
@@ -125,40 +126,40 @@ enum PlayerOrigin: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .drifter: "The Drifter"
         case .nobleBlood: "Noble Blood"
-        case .untamedHero: "Untamed Hero"
-        case .beastChild: "Beast Child"
+        case .unbroken: "The Unbroken"
+        case .feralScion: "Feral Scion"
         case .bladeDisciple: "Blade Disciple"
-        case .commoner: "Commoner"
-        case .optimist: "Optimist"
-        case .opportunist: "Opportunist"
+        case .pragmatist: "The Pragmatist"
+        case .resolute: "The Resolute"
+        case .merchant: "The Merchant"
         }
     }
 
-    /// One line of flavour for the card.
+    /// One line of flavour for the slate.
     var tagline: String {
         switch self {
         case .drifter: "Masterless, townless. Just the wilds and two blunt knives."
         case .nobleBlood: "Old blood carries old power — and a talent for spellwork."
-        case .untamedHero: "A local champion, raised rough beyond the walls."
-        case .beastChild: "Raised among beasts. They barely notice you."
+        case .unbroken: "Knocked down a hundred times. Got up a hundred and one."
+        case .feralScion: "Raised among beasts. They barely notice you."
         case .bladeDisciple: "Devoted to the blade since you could stand."
-        case .commoner: "Nobody special — which means good at a little of everything."
-        case .optimist: "Bad luck slides right off you."
-        case .opportunist: "Every deal has an angle, and you always find it."
+        case .pragmatist: "No talent in particular — and no weakness either."
+        case .resolute: "Poison, fear, frost: none of it holds you for long."
+        case .merchant: "Every deal has an angle, and you always find it."
         }
     }
 
     /// The trait as rules text.
     var traitDescription: String {
         switch self {
-        case .drifter: "+15% Luck: bigger critical hits and better rare drops. Skips the First Bastion: wakes in the wilds with only twin daggers."
-        case .nobleBlood: "+10% Max Mana and +15% cast speed."
-        case .untamedHero: "+10% Vitality and HP, +5% physical defense."
-        case .beastChild: "+10% Agility, sprinting costs 20% less stamina, monsters notice you 25% closer."
+        case .drifter: "+15% Luck: bigger critical hits and better rare drops. Skips the First Bastion: wakes in the Bramble Primeval with only shorts and twin daggers."
+        case .nobleBlood: "+10% Max MP and +15% cast speed."
+        case .unbroken: "+10% Max HP and +5% physical poise (shorter stagger)."
+        case .feralScion: "+10% Agility, sprinting drains 20% less stamina, monsters notice you 25% closer."
         case .bladeDisciple: "+10% attack speed with swords and daggers. Starts with an Iron Sword."
-        case .commoner: "+3 to every base attribute. Flexible to build in any direction."
-        case .optimist: "Debuffs on you wear off 25% sooner."
-        case .opportunist: "15% discount at every town vendor."
+        case .pragmatist: "+3 to every base attribute. A balanced all-rounder."
+        case .resolute: "Debuffs on you wear off 25% sooner."
+        case .merchant: "15% discount at every NPC vendor."
         }
     }
 
@@ -166,12 +167,12 @@ enum PlayerOrigin: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .drifter: AttributeBonuses(luck: 0.15)
         case .nobleBlood: AttributeBonuses(maxMana: 0.10, castSpeed: 0.15)
-        case .untamedHero: AttributeBonuses(vitality: 0.10, physicalDefense: 0.05)
-        case .beastChild: AttributeBonuses(agility: 0.10, sprintStaminaCost: -0.20, aggroRadius: -0.25)
+        case .unbroken: AttributeBonuses(maxHP: 0.10, poise: 0.05)
+        case .feralScion: AttributeBonuses(agility: 0.10, sprintStaminaCost: -0.20, aggroRadius: -0.25)
         case .bladeDisciple: AttributeBonuses(bladeAttackSpeed: 0.10)
-        case .commoner: AttributeBonuses(flatAllAttributes: 3)
-        case .optimist: AttributeBonuses(debuffDuration: -0.25)
-        case .opportunist: AttributeBonuses(vendorDiscount: 0.15)
+        case .pragmatist: AttributeBonuses(flatAllAttributes: 3)
+        case .resolute: AttributeBonuses(debuffDuration: -0.25)
+        case .merchant: AttributeBonuses(vendorDiscount: 0.15)
         }
     }
 
@@ -179,34 +180,34 @@ enum PlayerOrigin: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .drifter: [.rustyTwinDaggers, .clothShorts] // as close to nothing as decency allows
         case .nobleBlood: [.apprenticeWand, .travelersTunic, .travelersTrousers, .signetRing]
-        case .untamedHero: [.shortSword, .huntersWraps, .travelersTrousers]
-        case .beastChild: [.rustyTwinDaggers, .huntersWraps, .travelersTrousers]
+        case .unbroken: [.shortSword, .oakBuckler, .huntersWraps, .travelersTrousers]
+        case .feralScion: [.rustyTwinDaggers, .huntersWraps, .travelersTrousers]
         case .bladeDisciple: [.ironSword, .travelersTunic, .travelersTrousers]
-        case .commoner, .opportunist: [.shortSword, .travelersTunic, .travelersTrousers]
-        case .optimist: [.shortSword, .travelersTunic, .travelersTrousers, .luckyCoin]
+        case .pragmatist, .resolute: [.shortSword, .travelersTunic, .travelersTrousers]
+        case .merchant: [.shortSword, .travelersTunic, .travelersTrousers, .luckyCoin]
         }
     }
 
     var spawn: SpawnPoint {
         switch self {
-        case .drifter: .brambleWilds
-        case .nobleBlood, .commoner, .optimist, .opportunist: .bastionSquare
-        case .untamedHero: .bastionGarrison
-        case .beastChild, .bladeDisciple: .bastionTrainingGrounds
+        case .drifter: .bramblePrimeval
+        case .nobleBlood, .pragmatist, .resolute, .merchant: .bastionPlaza
+        case .unbroken: .bastionGarrison
+        case .feralScion, .bladeDisciple: .bastionTrainingGrounds
         }
     }
 
-    /// SF Symbol for the card.
+    /// SF Symbol for the slate.
     var symbol: String {
         switch self {
         case .drifter: "figure.hiking"
         case .nobleBlood: "crown"
-        case .untamedHero: "flame"
-        case .beastChild: "pawprint"
+        case .unbroken: "flame"
+        case .feralScion: "pawprint"
         case .bladeDisciple: "bolt.horizontal"
-        case .commoner: "house"
-        case .optimist: "sun.max"
-        case .opportunist: "theatermasks"
+        case .pragmatist: "scalemass"
+        case .resolute: "mountain.2"
+        case .merchant: "bag"
         }
     }
 

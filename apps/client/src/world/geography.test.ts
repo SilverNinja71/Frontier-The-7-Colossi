@@ -17,7 +17,7 @@ import {
 
 const grid = new HeightGrid();
 
-describe('Bramble Wilds geography', () => {
+describe('Bramble Primeval geography', () => {
   it('keeps the arena floor exactly level', () => {
     for (const [x, z] of [
       [0, 0],

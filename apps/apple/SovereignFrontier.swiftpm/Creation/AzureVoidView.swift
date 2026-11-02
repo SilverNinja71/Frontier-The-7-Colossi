@@ -1,9 +1,10 @@
 import SceneKit
 import SwiftUI
 
-/// Character creation in the Azure Chamber: identity → origin → job → confirm, with the
-/// pioneer turning on a glass projection dais in an endless cobalt void (#061121).
-struct AzureChamberView: View {
+/// Character creation in the Azure Void: identity → origin → job → confirm, with the
+/// pioneer turning on a glass dais in an endless cobalt expanse (#050d1a), choices shown
+/// on floating frosted slates.
+struct AzureVoidView: View {
     enum Step: Int, CaseIterable {
         case identity, origin, job, confirm
 
@@ -19,7 +20,7 @@ struct AzureChamberView: View {
 
     let onComplete: (PioneerProfile) -> Void
 
-    @State private var chamber = ChamberScene()
+    @State private var chamber = VoidScene()
     @State private var step: Step = .identity
     @State private var name = ""
     @State private var appearance = Appearance()
@@ -49,7 +50,7 @@ struct AzureChamberView: View {
                 )
 
             VStack(spacing: 10) {
-                Text("FRONTIER OF THE COLOSSI  ·  AZURE CHAMBER")
+                Text("SOVEREIGN FRONTIER  ·  THE AZURE VOID")
                     .font(.caption2.weight(.semibold))
                     .tracking(4)
                     .foregroundStyle(Color.white.opacity(0.55))
@@ -60,7 +61,7 @@ struct AzureChamberView: View {
 
             panelLayout
         }
-        .background(Color(red: 0.02, green: 0.04, blue: 0.1))
+        .background(Color(red: 0.02, green: 0.05, blue: 0.1))
         .onAppear { refreshFigure() }
         .onChange(of: appearance) { _, _ in refreshFigure() }
         .onChange(of: origin) { _, _ in refreshFigure() }
@@ -167,7 +168,7 @@ struct AzureChamberView: View {
                 .foregroundStyle(Color.white.opacity(0.6))
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(Array(PlayerOrigin.allCases.enumerated()), id: \.element) { index, candidate in
-                    OriginCard(origin: candidate, selected: origin == candidate, delay: Double(index) * 0.35)
+                    OriginSlate(origin: candidate, selected: origin == candidate, delay: Double(index) * 0.35, tilt: index.isMultiple(of: 2) ? 1 : -1)
                         .onTapGesture { withAnimation(.spring(duration: 0.3)) { origin = candidate } }
                 }
             }
@@ -212,6 +213,11 @@ struct AzureChamberView: View {
                     Tag(text: job.title, symbol: job.symbol)
                 }
                 AttributeGrid(attributes: profile.attributes)
+                HStack(spacing: 16) {
+                    Label("\(profile.maxHP) HP", systemImage: "heart.fill").foregroundStyle(Color.pink)
+                    Label("\(profile.maxMP) MP", systemImage: "drop.fill").foregroundStyle(Color.cyan)
+                }
+                .font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(origin.bonuses.summaryLines, id: \.self) { line in
                         Label(line, systemImage: "sparkle").font(.caption).foregroundStyle(Color.cyan)
@@ -238,11 +244,11 @@ struct AzureChamberView: View {
 // MARK: - Components
 
 private struct StepHeader: View {
-    let current: AzureChamberView.Step
+    let current: AzureVoidView.Step
 
     var body: some View {
         HStack(spacing: 10) {
-            ForEach(AzureChamberView.Step.allCases, id: \.self) { step in
+            ForEach(AzureVoidView.Step.allCases, id: \.self) { step in
                 HStack(spacing: 6) {
                     Circle()
                         .fill(step.rawValue <= current.rawValue ? Color.cyan : Color.white.opacity(0.25))
@@ -295,11 +301,14 @@ private struct SwatchRow: View {
     }
 }
 
-/// Glassy origin card that floats gently, out of phase with its neighbours.
-private struct OriginCard: View {
+/// A frosted glass slate that floats gently, out of phase with its neighbours, tilted a
+/// touch towards the centre of the void.
+private struct OriginSlate: View {
     let origin: PlayerOrigin
     let selected: Bool
     let delay: Double
+    /// 1 for the left column, -1 for the right.
+    let tilt: Double
     @State private var lifted = false
 
     var body: some View {
@@ -322,9 +331,18 @@ private struct OriginCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(selected ? Color.cyan : Color.white.opacity(0.22), lineWidth: selected ? 1.5 : 0.75)
         )
+        .overlay(alignment: .top) {
+            // Bevel highlight along the slate's top edge.
+            LinearGradient(colors: [Color.white.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .allowsHitTesting(false)
+        }
         .shadow(color: Color.cyan.opacity(selected ? 0.55 : 0), radius: 14)
-        .scaleEffect(selected ? 1.03 : 1)
-        .offset(y: lifted ? -3 : 3)
+        .shadow(color: .black.opacity(0.35), radius: 10, y: 8)
+        .rotation3DEffect(.degrees(selected ? 0 : 7 * tilt), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+        .scaleEffect(selected ? 1.04 : 1)
+        .offset(y: lifted ? -4 : 4)
         .onAppear {
             withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true).delay(delay)) { lifted = true }
         }

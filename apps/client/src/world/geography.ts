@@ -1,5 +1,5 @@
 /**
- * The Bramble Wilds: a deterministic, seed-free description of the explorable world.
+ * The Bramble Primeval: a deterministic, seed-free description of the explorable world.
  *
  * Pure math (no three.js) so the server can rebuild identical collision later. Everything the
  * client renders or collides with derives from `baseHeight`/`heightAt` and the tables below.

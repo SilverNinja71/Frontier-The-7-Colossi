@@ -93,7 +93,7 @@ normal = terrainBump(-vViewPosition, normal, terrainHeight, 0.55, faceDirection)
 `;
 
 /**
- * The Bramble Wilds' ground: 8×8 chunks (96 m) with two levels of detail and skirts, a
+ * The Bramble Primeval' ground: 8×8 chunks (96 m) with two levels of detail and skirts, a
  * splat shader that blends grass, dirt, rock, sand and snow with procedural detail and bump,
  * and a single Rapier heightfield for collision.
  */

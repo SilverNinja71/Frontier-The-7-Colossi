@@ -73,7 +73,7 @@ interface DetailBatch {
 }
 
 /**
- * Everything that grows or lies on the Bramble Wilds: forests by biome, rocks on slopes and
+ * Everything that grows or lies on the Bramble Primeval: forests by biome, rocks on slopes and
  * the mesa, meadow grass and flowers, reeds at the lake, stones along the roads. Instanced
  * per material through BatchedMesh (one draw call each, per-instance frustum culling), with
  * small props switched off beyond a short range of the player.

@@ -109,13 +109,13 @@ function SectionTitle({ children }: { children: ReactNode }) {
 function Title() {
   return (
     <div className="text-center">
+      <div className="mb-1 flex items-center justify-center gap-3 font-display text-sm font-semibold tracking-[0.6em] text-amber-200/90 uppercase sm:text-lg">
+        <span className="fx-divider w-10 sm:w-20" />
+        Sovereign
+        <span className="fx-divider w-10 sm:w-20" />
+      </div>
       <div className="font-display text-5xl font-bold tracking-[0.3em] text-amber-100 drop-shadow-[0_4px_18px_rgba(0,0,0,0.85)] sm:text-7xl">
         FRONTIER
-      </div>
-      <div className="mt-2 flex items-center justify-center gap-3 font-display text-xs font-semibold tracking-[0.45em] text-amber-200/85 uppercase sm:text-sm">
-        <span className="fx-divider w-10 sm:w-16" />
-        of the Colossi
-        <span className="fx-divider w-10 sm:w-16" />
       </div>
     </div>
   );
@@ -702,7 +702,7 @@ function WorldMap() {
       <div className="flex min-h-full items-center justify-center p-3 sm:p-6">
         <div className="fx-panel flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-6 md:flex-row">
           <div className="relative mx-auto aspect-square w-full max-w-[min(78vh,560px)] shrink-0 overflow-hidden rounded-lg border border-amber-200/30 bg-[#1a2230] shadow-[inset_0_0_40px_rgba(0,0,0,0.6)]">
-            {e.mapUrl && <img src={e.mapUrl} alt="Map of the Bramble Wilds" className="absolute inset-0 h-full w-full" draggable={false} />}
+            {e.mapUrl && <img src={e.mapUrl} alt="Map of the Bramble Primeval" className="absolute inset-0 h-full w-full" draggable={false} />}
             <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_60px_rgba(10,8,4,0.55)]" />
             {LANDMARKS.map((l) => {
               const known = e.discovered.includes(l.id);
@@ -741,7 +741,7 @@ function WorldMap() {
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <div>
-              <div className="font-display text-xl font-bold tracking-[0.2em] text-amber-100 uppercase">The Bramble Wilds</div>
+              <div className="font-display text-xl font-bold tracking-[0.2em] text-amber-100 uppercase">The Bramble Primeval</div>
               <div className="mt-1 text-xs text-white/60">
                 {found}/{LANDMARKS.length} landmarks discovered · {e.region}
               </div>

@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// App-wide routing: Azure Chamber (creation) → the world → (later) colossus raids.
+/// App-wide routing: Azure Void (creation) → the world → (later) colossus raids.
 @MainActor
 @Observable
 final class GameState {
@@ -33,7 +33,7 @@ final class GameState {
         route = .world
     }
 
-    /// Back to the Azure Chamber (keeps nothing).
+    /// Back to the Azure Void (keeps nothing).
     func startOver() {
         UserDefaults.standard.removeObject(forKey: Self.storageKey)
         pioneer = nil

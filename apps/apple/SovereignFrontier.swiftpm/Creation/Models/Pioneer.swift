@@ -63,7 +63,7 @@ enum BaseJob: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    /// Advancement path shown in the Azure Chamber.
+    /// Advancement path shown in the Azure Void.
     var path: [String] {
         switch self {
         case .swordsman: ["Swordsman", "Sword Master", "Sword Saint"]
@@ -151,7 +151,7 @@ struct Appearance: Equatable, Codable, Sendable {
     var outfitColor: PaletteColor = Palette.outfit[1]
 }
 
-/// Everything the Azure Chamber produces.
+/// Everything the Azure Void produces.
 struct PioneerProfile: Equatable, Codable, Sendable {
     var name: String
     var appearance: Appearance
@@ -171,9 +171,17 @@ struct PioneerProfile: Equatable, Codable, Sendable {
         a.luck += flat
         func scale(_ value: Int, _ bonus: Double) -> Int { Int((Double(value) * (1 + bonus)).rounded()) }
         a.luck = scale(a.luck, b.luck)
-        a.vitality = scale(a.vitality, b.vitality)
         a.agility = scale(a.agility, b.agility)
         return a
+    }
+
+    /// Derived pools: base from attributes, then the origin's percentage.
+    var maxHP: Int {
+        Int((Double(60 + attributes.vitality * 12) * (1 + origin.bonuses.maxHP)).rounded())
+    }
+
+    var maxMP: Int {
+        Int((Double(20 + attributes.intelligence * 8) * (1 + origin.bonuses.maxMana)).rounded())
     }
 }
 

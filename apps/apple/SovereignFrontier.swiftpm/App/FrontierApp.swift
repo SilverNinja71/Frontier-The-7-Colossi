@@ -19,7 +19,7 @@ struct RootView: View {
         Group {
             switch state.route {
             case .creation:
-                AzureChamberView { profile in
+                AzureVoidView { profile in
                     state.finishCreation(profile)
                 }
                 .transition(.opacity)
