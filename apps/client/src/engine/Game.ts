@@ -59,6 +59,7 @@ import { GameEvents } from './events.ts';
 import { FixedStepLoop } from './FixedStepLoop.ts';
 import { InputController } from './InputController.ts';
 import { LockReticle } from './LockReticle.ts';
+import { NatureKit } from './NatureKit.ts';
 import { PhysicsWorld, loadRapier, type Rapier } from './PhysicsWorld.ts';
 import { PlayerCharacter } from './PlayerCharacter.ts';
 import { PlayerRig } from './PlayerRig.ts';
@@ -172,11 +173,11 @@ export class Game implements GameCommands {
     platform: PlatformService,
     onProgress: (label: string) => void,
   ): Promise<Game> {
-    onProgress('Loading physics…');
-    const rapier = await loadRapier();
+    onProgress('Loading physics and scenery…');
+    const [rapier, kit] = await Promise.all([loadRapier(), NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`)]);
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit);
   }
 
   private constructor(
@@ -184,11 +185,12 @@ export class Game implements GameCommands {
     overlayRoot: HTMLElement,
     private readonly platform: PlatformService,
     rapier: Rapier,
+    private readonly kit: NatureKit | null,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
     this.#physics = new PhysicsWorld(rapier, SIM_DT);
-    this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics);
+    this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit, lowPower: touch });
 
     this.#motorContext = {
       moveset: DUAL_BLADES_MOVESET,
@@ -717,6 +719,7 @@ export class Game implements GameCommands {
     this.#daylight = this.#scene.setTime(renderTime, moonPhaseAt(renderTime));
     const night = 1 - this.#daylight;
     this.#arena.setNight(night, now);
+    this.kit?.tick(now);
     this.#audio.setNight(night);
 
     this.#input.pollGamepad(frameDt);

@@ -36,6 +36,7 @@ frontier-mmo/
 │           ├── platform/       PlatformService interface, CrazyGamesService, WebPlatformService
 │           ├── ui/             HUD (React) + Zustand store
 │           └── data/           Sandbox content typed against shared contracts
+│   └── asset-pipeline/         CLI that turns third-party / AI-generated glTF into web-budget kits
 └── packages/
     ├── shared-types/           Canonical data shapes: stats, items, skills, marks, monsters,
     │                           colossi, world, network state/packets, monetization policy
@@ -44,8 +45,8 @@ frontier-mmo/
                                 world clock, Shadow Stalker brain, seeded RNG
 ```
 
-`apps/server`, `apps/wiki-forum` and `apps/asset-pipeline` are Phase 2+; the `apps/*` workspace
-glob and Turborepo pipeline already cover them.
+`apps/server` and `apps/wiki-forum` are Phase 2+; the `apps/*` workspace glob and Turborepo
+pipeline already cover them.
 
 Internal packages are consumed as TypeScript source (`exports → ./src/index.ts`, no build step).
 They use only erasable syntax and `.ts` import specifiers so the future server can run them
@@ -90,6 +91,23 @@ night-only modifiers and forbids the chest slot (`resolveStats`, `canEquipSlot`)
 **Fair economy in the type system.** `ItemSource` has no store/premium variant, so anything
 with stats can only come from drops, crafting, quests or scenarios. `CosmeticDefinition`
 declares `stats?: never`.
+
+## Art pipeline
+
+The forest, rocks and undergrowth come from Quaternius' **Stylized Nature MegaKit** (CC0, see
+`apps/client/public/assets/nature/CREDITS.txt`). The raw pack (118 MB, 2048 px textures, trees
+up to 9.5k triangles) stays out of the repo; `apps/asset-pipeline` builds the shipped kit:
+
+```bash
+npm run nature -w @frontier/asset-pipeline -- --source "<pack>/glTF"
+```
+
+It picks 27 models, welds and simplifies them to budget (trees ~1.2–2.7k triangles, props
+≤ 600), drops normal maps, converts textures to 256–512 px WebP, quantises and
+meshopt-compresses geometry, and writes one `nature.glb` (~1.2 MB) with a node per model.
+The client (`NatureKit`) loads it alongside physics, scatters it deterministically as one
+`BatchedMesh` per material (per-object culling for camera and shadows), sways foliage in the
+wind, thins it on phones, and falls back to procedural props if the file fails to load.
 
 ## The sandbox (Firstia Training Grounds)
 
@@ -228,7 +246,9 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 - `apps/server`: Colyseus `WorldZoneRoom` stepping `stepMotor` per `InputFrame`, schema classes
   implementing `PlayerNetState`/`WorldZoneNetState`, input-replay reconciliation on the client.
 - Server-authoritative colossus: run `stepStalker` in a `ColossusRaidRoom`, one instance per world.
-- `apps/asset-pipeline`: glTF → Draco + KTX2 batch CLI; swap `PlayerRig` meshes for the model.
+- Characters and the Stalker as rigged glTF (e.g. Quaternius RPG / monster packs or your own
+  image-to-3D models) through `apps/asset-pipeline`, with animations mapped to motor states.
+- Distance-based tree LODs (`BatchedMesh.setGeometryIdAt`) once measured on real phones.
 - Gamepad input, WebGPU renderer path, recorded/foley audio to replace the synthesised SFX.
 - Swap `@dimforge/rapier3d-compat` (base64 WASM, 1.7 MB gzip) for the streaming `.wasm` build.
 - Lint/format (Biome or ESLint + Prettier) and CI running `npm run check`.

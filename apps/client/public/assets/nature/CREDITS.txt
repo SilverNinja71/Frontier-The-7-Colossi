@@ -1,0 +1,8 @@
+nature.glb is built by apps/asset-pipeline (npm run nature) from:
+
+  Stylized Nature MegaKit (Standard) by Quaternius
+  https://quaternius.com/packs/stylizednaturemegakit.html
+  License: CC0 1.0 Universal (public domain) — https://creativecommons.org/publicdomain/zero/1.0/
+
+Credit is not required by CC0; it is kept here for provenance. Support the author:
+https://www.patreon.com/quaternius

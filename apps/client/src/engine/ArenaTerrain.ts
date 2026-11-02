@@ -1,6 +1,26 @@
 import { DeterministicRng } from '@frontier/combat-math';
 import * as THREE from 'three';
+import type { NatureKit } from './NatureKit.ts';
 import type { PhysicsWorld } from './PhysicsWorld.ts';
+
+const BROADLEAF = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5'];
+const PINES = ['Pine_1', 'Pine_2', 'Pine_3', 'Pine_4', 'Pine_5'];
+const DEAD_TREES = ['DeadTree_1', 'DeadTree_2'];
+const ROCKS = ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'];
+const BUSHES = ['Bush_Common', 'Bush_Common', 'Bush_Common_Flowers'];
+const UNDERGROWTH = ['Fern_1', 'Plant_1', 'Fern_1'];
+const FLOWERS = ['Flower_3_Group', 'Flower_4_Group'];
+const GRASS = ['Grass_Common_Short', 'Grass_Wispy_Short'];
+const PEBBLES = ['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Square_1'];
+/** Models whose shadows read at gameplay distance. */
+const SHADOW_CASTERS = new Set([...BROADLEAF, ...PINES, ...DEAD_TREES, ...ROCKS, 'Bush_Common', 'Bush_Common_Flowers']);
+
+export interface ArenaOptions {
+  /** Art kit from apps/asset-pipeline; null falls back to procedural props. */
+  kit: NatureKit | null;
+  /** Phones: thinner foliage. */
+  lowPower: boolean;
+}
 
 export const ARENA_RADIUS = 30;
 const WALL_RADIUS = ARENA_RADIUS + 1.6;
@@ -41,13 +61,14 @@ export class ArenaTerrain {
     depthWrite: false,
   });
 
-  constructor(scene: THREE.Scene, physics: PhysicsWorld) {
+  constructor(scene: THREE.Scene, physics: PhysicsWorld, options: ArenaOptions) {
     this.#buildGround(physics);
     this.#buildMarkings();
     this.#buildWall(physics);
     this.#buildPillars(physics);
     this.#buildBraziers(physics);
-    this.#buildScatter(physics);
+    if (options.kit) this.#buildKitScatter(physics, options.kit, options.lowPower);
+    else this.#buildScatter(physics);
     scene.add(this.group);
   }
 
@@ -248,6 +269,115 @@ export class ArenaTerrain {
     }
   }
 
+  /** Instanced CC0 nature kit: forest, rocks and undergrowth, with grass and pebbles in the ring. */
+  #buildKitScatter(physics: PhysicsWorld, kit: NatureKit, lowPower: boolean): void {
+    const rng = new DeterministicRng(2024);
+    const placements = new Map<string, THREE.Matrix4[]>();
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+    const scale = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    const density = lowPower ? 0.4 : 1;
+
+    const place = (model: string, x: number, z: number, s: number, sink = 0.05): number => {
+      const y = terrainHeight(x, z) - sink * s;
+      if (!kit.has(model)) return y;
+      pos.set(x, y, z);
+      quaternion.setFromEuler(euler.set(0, rng.next() * Math.PI * 2, 0));
+      scale.setScalar(s);
+      const list = placements.get(model) ?? [];
+      list.push(matrix.compose(pos, quaternion, scale).clone());
+      placements.set(model, list);
+      return y;
+    };
+    const inRing = (min: number, max: number): [number, number] => {
+      const a = rng.next() * Math.PI * 2;
+      const r = min + rng.next() * (max - min);
+      return [Math.sin(a) * r, Math.cos(a) * r];
+    };
+    const pick = (models: readonly string[]) => models[Math.floor(rng.next() * models.length)]!;
+    const scatter = (count: number, models: readonly string[], min: number, max: number, smin: number, smax: number) => {
+      for (let i = 0; i < Math.round(count * density); i++) {
+        const [x, z] = inRing(min, max);
+        place(pick(models), x, z, smin + rng.next() * (smax - smin));
+      }
+    };
+
+    // Forest: broadleaf near the arena, pines taking over up the hills.
+    for (let i = 0; i < Math.round(150 * (lowPower ? 0.7 : 1)); i++) {
+      const [x, z] = inRing(42, 108);
+      const pine = rng.next() < smoothstep(48, 100, Math.hypot(x, z)) * 0.85 + 0.1;
+      const s = 0.85 + rng.next() * 0.5;
+      const y = place(pick(pine ? PINES : BROADLEAF), x, z, s);
+      physics.addStatic(physics.rapier.ColliderDesc.cylinder(1.5 * s, 0.32 * s).setTranslation(x, y + 1.5 * s, z));
+    }
+    // Dead trees hug the wall: the Stalker's side of the world.
+    for (let i = 0; i < 7; i++) {
+      const [x, z] = inRing(36, 46);
+      const s = 0.75 + rng.next() * 0.3;
+      const y = place(pick(DEAD_TREES), x, z, s);
+      physics.addStatic(physics.rapier.ColliderDesc.cylinder(1.5 * s, 0.35 * s).setTranslation(x, y + 1.5 * s, z));
+    }
+    for (let i = 0; i < 80; i++) {
+      const [x, z] = inRing(34, 110);
+      const s = 0.4 + rng.next() * rng.next() * 1.4;
+      const y = place(pick(ROCKS), x, z, s, 0.15);
+      if (s > 0.8) physics.addStatic(physics.rapier.ColliderDesc.ball(1.1 * s).setTranslation(x, y + 0.5 * s, z));
+    }
+    scatter(60, BUSHES, 34, 95, 0.8, 1.3);
+    scatter(70, UNDERGROWTH, 33, 85, 0.8, 1.4);
+    scatter(50, FLOWERS, 35, 75, 0.8, 1.2);
+    scatter(450, GRASS, 32.5, 70, 0.8, 1.4);
+
+    // Inside the ring: tufts at the wall's foot, pebbles on the sand, mushrooms by the pillars.
+    scatter(70, GRASS, 27.5, 29.8, 0.7, 1.1);
+    scatter(45, PEBBLES, 3, 28, 0.8, 1.6);
+    for (let i = 0; i < 14; i++) {
+      const pillar = Math.floor(i / 2.34) % 6;
+      const angle = (pillar / 6) * Math.PI * 2 + Math.PI / 6;
+      const x = Math.sin(angle) * 20 + (rng.next() - 0.5) * 3;
+      const z = Math.cos(angle) * 20 + (rng.next() - 0.5) * 3;
+      place('Mushroom_Common', x, z, 0.8 + rng.next() * 0.6);
+    }
+
+    // One BatchedMesh per material: a single draw call each, with per-object frustum culling
+    // for the camera and for the shadow map (an InstancedMesh spanning the map is all-or-nothing).
+    interface Batch {
+      geometries: Map<THREE.BufferGeometry, number>;
+      instances: { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 }[];
+      vertices: number;
+      indices: number;
+      castShadow: boolean;
+    }
+    const batches = new Map<THREE.Material, Batch>();
+    for (const [model, matrices] of placements) {
+      for (const part of kit.parts(model)) {
+        let batch = batches.get(part.material);
+        if (!batch) {
+          batch = { geometries: new Map(), instances: [], vertices: 0, indices: 0, castShadow: false };
+          batches.set(part.material, batch);
+        }
+        if (!batch.geometries.has(part.geometry)) {
+          batch.geometries.set(part.geometry, -1);
+          batch.vertices += part.geometry.getAttribute('position').count;
+          batch.indices += part.geometry.getIndex()!.count;
+        }
+        batch.castShadow ||= SHADOW_CASTERS.has(model);
+        for (const matrix of matrices) batch.instances.push({ geometry: part.geometry, matrix });
+      }
+    }
+    for (const [material, batch] of batches) {
+      const mesh = new THREE.BatchedMesh(batch.instances.length, batch.vertices, batch.indices, material);
+      for (const geometry of batch.geometries.keys()) batch.geometries.set(geometry, mesh.addGeometry(geometry));
+      for (const { geometry, matrix } of batch.instances) mesh.setMatrixAt(mesh.addInstance(batch.geometries.get(geometry)!), matrix);
+      mesh.castShadow = batch.castShadow;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+    }
+  }
+
+  /** Procedural fallback when the art kit is unavailable. */
   #buildScatter(physics: PhysicsWorld): void {
     const rng = new DeterministicRng(2024);
     const matrix = new THREE.Matrix4();
