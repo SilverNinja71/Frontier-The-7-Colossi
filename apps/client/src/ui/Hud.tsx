@@ -1,7 +1,7 @@
 import { CharacterAction } from '@frontier/shared-types';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AdFailureReason, PlatformService } from '../platform/index.ts';
-import { pushToast, useHud, type HudState } from './store.ts';
+import { pushToast, useHud, type HudState, type HuntReport } from './store.ts';
 
 export function Hud({ platform }: { platform: PlatformService }) {
   const phase = useHud((s) => s.phase);
@@ -12,7 +12,9 @@ export function Hud({ platform }: { platform: PlatformService }) {
       {phase === 'error' && <ErrorScreen />}
       {phase === 'title' && <TitleScreen />}
       {(phase === 'playing' || phase === 'paused') && <PlayingHud />}
+      {phase === 'playing' && <FallenOverlay />}
       {phase === 'paused' && <PauseMenu platform={platform} />}
+      {(phase === 'playing' || phase === 'paused') && <HuntReportModal />}
       {adBreak && (
         <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/90 text-sm tracking-widest text-white/70 uppercase">
           Advertisement — the game is paused
@@ -77,6 +79,24 @@ function TitleScreen() {
         Enter the Arena
       </button>
       <ControlsGrid touch={touch} />
+      {!touch && (
+        <div className="max-w-md text-center text-[11px] text-white/50">
+          Gamepad: LS move · RS camera · X/RT strike · A dodge · RB parry · B/LT sprint · R3 lock · Start pause
+        </div>
+      )}
+      <RecordsLine />
+    </div>
+  );
+}
+
+function RecordsLine() {
+  const records = useHud((s) => s.records);
+  if (records.hunts === 0) return null;
+  return (
+    <div className="text-center text-xs text-violet-200/80">
+      Shadow Stalker · {records.hunts} {records.hunts === 1 ? 'hunt' : 'hunts'} · best {Math.round(records.bestResolveBroken * 100)}% of
+      its Resolve broken · best chain {records.bestChain}
+      {records.subdued > 0 && ` · subdued ×${records.subdued}`}
     </div>
   );
 }
@@ -100,7 +120,7 @@ function ControlsGrid({ touch }: { touch: boolean }) {
         ['RMB / L', 'Parry: deflect at the moment of impact'],
         ['Tab / MMB', 'Lock on'],
         ['Shift', 'Sprint'],
-        ['T / G', 'Slam drill / dummy tracking'],
+        ['T / G / Y', 'Slam drill / dummy tracking / parry drill'],
         ['N', 'Call the new moon (sandbox)'],
         ['Esc / P', 'Pause'],
         ['F3', 'Debug overlay'],
@@ -119,6 +139,7 @@ function ControlsGrid({ touch }: { touch: boolean }) {
 
 function PauseMenu({ platform }: { platform: PlatformService }) {
   const commands = useHud((s) => s.commands);
+  const bossVisible = useHud((s) => s.boss.visible);
   const target = useHud((s) => s.target);
   const doubloons = useHud((s) => s.doubloons);
   const [adMessage, setAdMessage] = useState<string | null>(null);
@@ -161,6 +182,7 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
           <div className="grid grid-cols-2 gap-2">
             <Toggle label="Slam drill" on={target.drill} onClick={() => commands?.toggleDrill()} />
             <Toggle label="Dummy tracking" on={target.tracking} onClick={() => commands?.toggleTracking()} />
+            <Toggle label="Parry drill" on={target.strikeDrill} onClick={() => commands?.toggleStrikeDrill()} />
           </div>
           <button
             type="button"
@@ -169,6 +191,15 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
           >
             ☾ Call the new moon (Shadow Stalker)
           </button>
+          {bossVisible && (
+            <button
+              type="button"
+              onClick={() => commands?.fleeToDawn()}
+              className="rounded-md border border-white/15 bg-white/5 py-2 text-xs text-white/60 hover:bg-white/10"
+            >
+              Flee until dawn (ends the hunt · forfeits the mark)
+            </button>
+          )}
           <MarksPanel />
 
           <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs">
@@ -327,8 +358,8 @@ function ActionBar() {
       <Slot keyLabel="RMB" name="Parry" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
       <Slot keyLabel="Tab" name="Lock" active={lockOn} />
       <Slot keyLabel="Shift" name="Sprint" active={v.sprinting} disabled={v.exhausted} />
-      <Slot keyLabel="T" name="Drill" active={target.drill} />
-      <Slot keyLabel="G" name="Track" active={target.tracking} />
+      <Slot keyLabel="T" name="Drill" active={target.drill} trainingOnly />
+      <Slot keyLabel="G" name="Track" active={target.tracking} trainingOnly />
     </div>
   );
 }
@@ -339,6 +370,7 @@ function Slot({
   active,
   disabled = false,
   highlight = false,
+  trainingOnly = false,
   children,
 }: {
   keyLabel: string;
@@ -346,11 +378,13 @@ function Slot({
   active: boolean;
   disabled?: boolean;
   highlight?: boolean;
+  /** Sandbox toggles: dropped on narrower screens so the bar never covers the orbs. */
+  trainingOnly?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div
-      className={`flex h-14 w-16 flex-col items-center justify-center rounded-md border text-center transition ${
+      className={`${trainingOnly ? 'hidden lg:flex' : 'flex'} h-12 w-14 flex-col sm:h-14 sm:w-16 items-center justify-center rounded-md border text-center transition ${
         highlight
           ? 'border-sky-300 bg-sky-500/30 shadow-[0_0_16px_rgba(56,189,248,0.6)]'
           : active
@@ -376,13 +410,19 @@ function TargetFrame() {
           {t.name}
         </span>
         <span className="tabular-nums text-white/70 [text-shadow:0_1px_3px_#000]">
-          {t.dps > 0 ? `${t.dps} DPS · ${t.total.toLocaleString()} dmg` : 'Strike to begin'}
+          {t.dps > 0 ? `${t.dps} DPS · ${t.total.toLocaleString()} dmg` : t.strikeDrill ? 'Parry its swings' : 'Strike to begin'}
         </span>
       </div>
       <div className="relative h-3 overflow-hidden rounded-sm border border-black/60 bg-black/60">
         <div className="absolute inset-y-0 left-0 bg-white/70 transition-[width] delay-200 duration-700 ease-out" style={{ width: `${pct}%` }} />
         <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-rose-700 to-rose-500 transition-[width] duration-100" style={{ width: `${pct}%` }} />
       </div>
+      {t.strikeDrill && (
+        <div className="mt-1 text-center text-[11px] tracking-wide text-amber-100/90 [text-shadow:0_1px_3px_#000]">
+          Parry drill · streak <span className="font-bold tabular-nums">{t.drillStreak}</span> · best {t.drillBest}
+          <span className="text-white/50"> — parry on the white flash</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -551,6 +591,97 @@ function Announcement() {
       <div className="font-display text-2xl tracking-[0.12em] text-white [text-shadow:0_2px_12px_#000] sm:text-3xl">{announcement.title}</div>
       {announcement.subtitle && <div className="mt-1 text-sm text-white/75 [text-shadow:0_1px_4px_#000]">{announcement.subtitle}</div>}
       <div className="mx-auto mt-2 h-px w-2/3 bg-gradient-to-r from-transparent via-amber-200/70 to-transparent" />
+    </div>
+  );
+}
+
+// --- Death and hunt results -----------------------------------------------------
+
+function FallenOverlay() {
+  const fallen = useHud((s) => s.fallen);
+  if (!fallen) return null;
+  return (
+    <div className="fixed inset-0 z-40 flex animate-toast-in flex-col items-center justify-center bg-gradient-to-b from-black/30 via-red-950/50 to-black/60">
+      <div className="font-display text-5xl tracking-[0.4em] text-red-200 [text-shadow:0_4px_20px_#000] sm:text-6xl">YOU FELL</div>
+      {fallen.fed > 0 && (
+        <div className="mt-3 text-sm tracking-widest text-violet-200 uppercase [text-shadow:0_1px_4px_#000]">
+          It feeds · +{Math.round(fallen.fed)} Resolve
+        </div>
+      )}
+      <div className="mt-2 text-xs text-white/60">Rising again…</div>
+    </div>
+  );
+}
+
+const OUTCOME_TITLE: Record<HuntReport['outcome'], string> = {
+  subdued: 'The Shadow Stalker is subdued',
+  survived: 'You survived the new moon',
+  faded: 'The hunt is over',
+};
+
+function formatTime(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** One concrete thing to fix next time, read from the tally. */
+function coachingTip(r: HuntReport): string {
+  if (r.outcome === 'subdued') return 'Few hunters ever see this. The mark is yours.';
+  if (r.early > r.late * 1.5 && r.early >= 3) return 'Most misses were early: wait for the white flash in its eyes, not the gold.';
+  if (r.late > r.early && r.late >= 3) return 'Most misses were late: press on the white flash, before the claws arrive.';
+  if (r.falls > 0) return 'Every fall fed it 35% Resolve. Roll away and breathe before chasing a chain.';
+  if (r.exposures === 0) return 'Five perfect parries in a row expose its heart. Rending Claws gives three at once.';
+  if (!r.eclipse) return 'Strike only the heart while it is Exposed: the body takes a quarter.';
+  return 'In Eclipse its lunge flows into claws. Parry the lunge to stop the follow-up.';
+}
+
+function HuntReportModal() {
+  const report = useHud((s) => s.report);
+  const records = useHud((s) => s.records);
+  const commands = useHud((s) => s.commands);
+  if (!report) return null;
+  const best = (key: string) =>
+    report.newBests.includes(key) ? <span className="ml-1.5 rounded bg-amber-400/25 px-1 text-[10px] font-bold text-amber-200">NEW BEST</span> : null;
+  const rows: [string, ReactNode][] = [
+    ['Resolve broken', <>{Math.round(report.resolveBroken * 100)}%{best('resolve')}</>],
+    ['Hunt length', <>{formatTime(report.seconds)}{best('time')}</>],
+    ['Perfect parries', report.perfectParries],
+    ['Best chain', <>{report.bestChain}{best('chain')}</>],
+    ['Exposed', `${report.exposures}×${report.eclipse ? ' · reached Eclipse' : ''}`],
+    ['Parry misses', `${report.early} early · ${report.late} late · ${report.guards} guarded`],
+    ['Hits taken', `${report.hitsTaken} · ${report.falls} ${report.falls === 1 ? 'fall' : 'falls'}`],
+    ['Perilous blows dodged', report.dodges],
+  ];
+  return (
+    <div className="pointer-events-auto fixed inset-0 z-40 overflow-y-auto bg-black/65 backdrop-blur-[2px]">
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-xl border border-violet-300/30 bg-slate-950/90 p-6 shadow-2xl">
+          <div className="text-center text-[11px] font-semibold tracking-[0.45em] text-violet-300 uppercase">Hunt report</div>
+          <div className="mt-1 text-center font-display text-2xl tracking-[0.08em] text-white">{OUTCOME_TITLE[report.outcome]}</div>
+          {report.markEarned && (
+            <div className="mt-2 text-center text-sm text-violet-200">Mark acquired: Mark of the Night Lycaon</div>
+          )}
+          <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            {rows.map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-white/55">{label}</dt>
+                <dd className="text-right tabular-nums text-white">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 rounded-md border border-amber-300/20 bg-amber-500/10 p-2.5 text-xs text-amber-100">{coachingTip(report)}</p>
+          <div className="mt-3 text-center text-[11px] text-white/45">
+            Record · {records.hunts} hunts · subdued {records.subdued} · survived {records.survived} · best chain {records.bestChain}
+            {records.fastestSubdueSeconds !== null && ` · fastest subdue ${formatTime(records.fastestSubdueSeconds)}`}
+          </div>
+          <button
+            type="button"
+            onClick={() => commands?.closeReport()}
+            className="mt-4 w-full rounded-md bg-violet-500/80 py-2.5 text-sm font-bold tracking-widest text-white uppercase hover:bg-violet-500 active:scale-[0.98]"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

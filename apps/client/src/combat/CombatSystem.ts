@@ -9,19 +9,31 @@ import {
   grantSkillXp,
   incrementCounter,
   resolveIncomingAttack,
-  stalkerAttackResolved,
   testMeleeHit,
   type DamageResult,
+  type DefenseOutcome,
+  type EnemyHit,
   type MeleeHit,
   type MotorTuning,
   type Moveset,
-  type StalkerHit,
 } from '@frontier/combat-math';
+import { CharacterAction, SIM_DT } from '@frontier/shared-types';
 import type { GroundPose, Hurtbox, SkillDefinition, SkillProgress, StatBlock } from '@frontier/shared-types';
 import { PLAYER_HURTBOXES } from '../data/sandbox.ts';
 import type { GameEvents } from '../engine/events.ts';
 import type { PlayerCharacter } from '../engine/PlayerCharacter.ts';
-import type { ShadowStalker } from './ShadowStalker.ts';
+
+/** Anything that throws EnemyHits at the player (the Stalker, the dummy's parry drill). */
+export interface EnemySource {
+  readonly id: string;
+  readonly pose: GroundPose;
+}
+
+const TICK_MS = Math.round(SIM_DT * 1000);
+/** A parry pressed this many ticks after an unparried blow still gets LATE feedback. */
+const LATE_FEEDBACK_TICKS = 10;
+/** A blow landing this long after a parry press reads as an EARLY press. */
+const EARLY_FEEDBACK_TICKS = 24;
 
 export interface HitReceipt {
   /** Damage (or colossus resolve) actually removed. */
@@ -56,7 +68,8 @@ export class CombatSystem {
   readonly #rng = new DeterministicRng(0xf1257);
   /** attackSerial that last landed on each target — one hit per swing per target. */
   readonly #lastSerial = new Map<string, number>();
-  #lastEnemySerial = -1;
+  readonly #lastEnemySerial = new Map<string, number>();
+  #lastUnparried: { tick: number } | null = null;
   #evolutionAnnounced = false;
 
   constructor(
@@ -113,29 +126,33 @@ export class CombatSystem {
     }
   }
 
-  /** The Stalker's live hitbox this tick, if any, against the player. */
-  resolveEnemyHit(stalker: ShadowStalker, hit: StalkerHit | null, attackerStats: StatBlock): void {
-    if (!hit || hit.serial === this.#lastEnemySerial || this.player.dead) return;
+  /**
+   * An enemy's live hitbox this tick, if any, against the player. Returns how the player met
+   * it (once per attack instance), or null when nothing connected this tick.
+   */
+  resolveEnemyHit(source: EnemySource, hit: EnemyHit | null, attackerStats: StatBlock): DefenseOutcome | null {
+    if (!hit || hit.serial === this.#lastEnemySerial.get(source.id) || this.player.dead) return null;
     const pose = this.player.pose();
-    if (!testMeleeHit(hit.pose, hit.attack, pose, PLAYER_HURTBOXES)) return;
-    this.#lastEnemySerial = hit.serial;
-    if (this.player.spawnProtected) return;
+    if (!testMeleeHit(hit.pose, hit.attack, pose, PLAYER_HURTBOXES)) return null;
+    this.#lastEnemySerial.set(source.id, hit.serial);
+    if (this.player.spawnProtected) return null;
 
     const motor = this.player.motor;
+    const parryActive = motor.action === CharacterAction.Parry ? motor.actionTick : -1;
     const outcome = resolveIncomingAttack(motor, this.tuning, {
       parryable: hit.attack.parryable,
       deflectTicks: hit.attack.deflectTicks,
-      fromX: stalker.pose.x - pose.x,
-      fromZ: stalker.pose.z - pose.z,
+      fromX: source.pose.x - pose.x,
+      fromZ: source.pose.z - pose.z,
     });
-    const contact = { x: (pose.x * 2 + stalker.pose.x) / 3, y: pose.y + 1.3, z: (pose.z * 2 + stalker.pose.z) / 3 };
-    const { resolveDamage, events } = stalkerAttackResolved(stalker.brain, outcome);
+    if (hit.attack.parryable) this.#parryFeedback(outcome, hit, parryActive);
+    const contact = { x: (pose.x * 2 + source.pose.x) / 3, y: pose.y + 1.3, z: (pose.z * 2 + source.pose.z) / 3 };
 
     switch (outcome) {
       case 'parried':
         applyParrySuccess(motor, this.tuning);
         incrementCounter(this.skill, 'perfectParries');
-        this.events.emit('parry', { ...contact, chain: stalker.brain.parryChain, resolveDamage });
+        this.events.emit('parry', { ...contact, sourceId: source.id });
         break;
       case 'dodged':
         this.events.emit('perfectDodge', { x: pose.x, y: pose.y + 1.2, z: pose.z });
@@ -151,15 +168,42 @@ export class CombatSystem {
         const amount = this.#enemyDamage(hit, attackerStats);
         if (this.player.takeDamage(amount, hit.attack.staggerTicks)) {
           this.events.emit('playerDamaged', { amount, staggered: !this.player.dead });
-          if (this.player.dead) this.events.emit('toast', { text: 'Knocked out — respawning', tone: 'danger' });
         }
         break;
       }
     }
-    if (events) this.events.emit('stalker', { flags: events });
+    return outcome;
   }
 
-  #enemyDamage(hit: StalkerHit, attackerStats: StatBlock): number {
+  /** Call when the player starts a parry: a press just after a blow landed reads as LATE. */
+  onParryStarted(): void {
+    const last = this.#lastUnparried;
+    if (!last) return;
+    const late = this.player.tick - last.tick;
+    if (late > 0 && late <= LATE_FEEDBACK_TICKS) this.events.emit('parryTiming', { kind: 'late', ms: late * TICK_MS });
+    this.#lastUnparried = null;
+  }
+
+  /**
+   * Teach the timing. A deflect lands only if the blow arrives within the first few ticks of
+   * the parry stance: arriving later means the button went down too early.
+   */
+  #parryFeedback(outcome: DefenseOutcome, hit: EnemyHit, stanceTick: number): void {
+    const window = Math.min(this.tuning.parry.perfectTicks, hit.attack.deflectTicks);
+    const sincePress = this.player.tick - this.player.lastParryStartTick;
+    this.#lastUnparried = null;
+    if (outcome === 'parried') {
+      this.events.emit('parryTiming', { kind: 'perfect', ms: sincePress * TICK_MS });
+    } else if (outcome === 'guarded' || (outcome === 'hit' && sincePress < EARLY_FEEDBACK_TICKS && stanceTick < 0)) {
+      this.events.emit('parryTiming', { kind: 'early', ms: (sincePress - window + 1) * TICK_MS });
+    } else if (outcome === 'hit' && stanceTick >= 0 && stanceTick < window) {
+      this.events.emit('parryTiming', { kind: 'angle', ms: 0 });
+    } else if (outcome === 'hit') {
+      this.#lastUnparried = { tick: this.player.tick };
+    }
+  }
+
+  #enemyDamage(hit: EnemyHit, attackerStats: StatBlock): number {
     return computeDamage({
       attacker: deriveCombatStats(attackerStats),
       defender: this.player.stats,

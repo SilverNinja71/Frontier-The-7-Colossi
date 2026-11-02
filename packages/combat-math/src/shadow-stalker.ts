@@ -43,6 +43,8 @@ export interface EnemyAttack extends MeleeShape {
   next?: string;
   /** A parried attack knocks the stalker back (lunges). */
   recoilOnParry?: boolean;
+  /** Hitbox faces backwards (tail sweeps): it is thrown at targets behind it. */
+  rear?: boolean;
 }
 
 const claw = (overrides: Partial<EnemyAttack> & Pick<EnemyAttack, 'id' | 'name'>): EnemyAttack => ({
@@ -156,6 +158,32 @@ export const STALKER_ATTACKS: Readonly<Record<string, EnemyAttack>> = {
     weight: 1.5,
     staggerTicks: 28,
   },
+  'tail-lash': {
+    id: 'tail-lash',
+    name: 'Tail Lash',
+    windupTicks: 8,
+    activeTicks: 3,
+    recoveryTicks: 16,
+    parryable: true,
+    motionValue: 1.1,
+    origin: 'self',
+    reach: 3.8,
+    arcDegrees: 150,
+    heightMin: 0,
+    heightMax: 2.2,
+    travel: 0,
+    travelLeadTicks: 0,
+    deflectTicks: 5,
+    feintTicks: 4,
+    commitTicks: 3,
+    minRange: 0,
+    maxRange: 4.8,
+    cooldownTicks: 90,
+    // Never an opener: thrown reactively at whoever stands behind it.
+    weight: 0,
+    staggerTicks: 16,
+    rear: true,
+  },
 };
 
 const OPENERS = Object.values(STALKER_ATTACKS).filter((a) => a.weight > 0);
@@ -189,6 +217,13 @@ export const STALKER_TUNING = {
   eclipseIdleFactor: 0.5,
   /** Share of max Resolve it regains each time it kills its target. */
   feedOnFall: 0.35,
+  /** Targets this far off its facing (degrees) count as behind it: Tail Lash range. */
+  rearArcDegrees: 110,
+  /** Wariness gained per early or idle parry attempt, lost per tick, and the extra
+   *  hesitation (ticks) it adds to parryable windups at full wariness. */
+  warinessPerAttempt: 0.34,
+  warinessDecayPerTick: 0.0025,
+  warinessMaxHesitation: 8,
 } as const;
 
 export const StalkerPhase = {
@@ -216,6 +251,8 @@ export const StalkerEvent = {
   Recoiled: 1 << 6,
   /** Crossed into Eclipse (second phase). */
   Eclipsed: 1 << 7,
+  /** Wariness crossed the high mark: it has read the target's parry rhythm. */
+  Wary: 1 << 8,
 } as const;
 
 export interface StalkerState {
@@ -243,6 +280,8 @@ export interface StalkerState {
   resolve: number;
   parryChain: number;
   eclipsed: boolean;
+  /** 0..1, raised by parry spam; lengthens hesitations so mashing loses to patience. */
+  wariness: number;
 }
 
 export interface StalkerContext {
@@ -291,6 +330,7 @@ export function createStalkerState(): StalkerState {
     resolve: STALKER_TUNING.maxResolve,
     parryChain: 0,
     eclipsed: false,
+    wariness: 0,
   };
 }
 
@@ -318,6 +358,7 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
   let hit: StalkerHit | null = null;
 
   for (const id in s.cooldowns) if (s.cooldowns[id]! > 0) s.cooldowns[id]!--;
+  s.wariness = Math.max(0, s.wariness - T.warinessDecayPerTick);
 
   const dx = ctx.target.x - s.x;
   const dz = ctx.target.z - s.z;
@@ -340,6 +381,12 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
       break;
 
     case StalkerPhase.Prowl: {
+      // Whoever lingers behind it eats the tail before it turns around.
+      const tail = STALKER_ATTACKS['tail-lash']!;
+      if (ctx.targetAlive && dist <= tail.maxRange && (s.cooldowns[tail.id] ?? 0) <= 0 && isBehind(s, toTargetYaw)) {
+        events |= startAttack(s, tail, ctx.rng);
+        break;
+      }
       s.yaw = turnToward(s.yaw, toTargetYaw, maxTurn);
       if (!ctx.targetAlive) break;
       if (s.idleTicks > 0) {
@@ -378,7 +425,8 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
       const commitTick = windup - a.commitTicks;
       const travelStart = windup - a.travelLeadTicks;
       if (t < commitTick) {
-        s.yaw = turnToward(s.yaw, toTargetYaw, maxTurn * 1.5);
+        // Rear attacks track the target with the tail end.
+        s.yaw = turnToward(s.yaw, a.rear ? toTargetYaw + Math.PI : toTargetYaw, maxTurn * 1.5);
       } else if (t === commitTick) {
         s.aimX = ctx.target.x;
         s.aimZ = ctx.target.z;
@@ -392,7 +440,7 @@ export function stepStalker(s: StalkerState, ctx: StalkerContext): StalkerStepRe
         const pose =
           a.origin === 'target'
             ? { x: s.aimX, y: 0, z: s.aimZ, yaw: s.yaw }
-            : { x: s.x + velX * ctx.dt, y: 0, z: s.z + velZ * ctx.dt, yaw: s.yaw };
+            : { x: s.x + velX * ctx.dt, y: 0, z: s.z + velZ * ctx.dt, yaw: a.rear ? s.yaw + Math.PI : s.yaw };
         hit = { attack: a, serial: s.attackSerial, pose };
       }
       if (t >= windup + a.activeTicks + a.recoveryTicks) {
@@ -463,6 +511,23 @@ export function stalkerAttackResolved(s: StalkerState, outcome: DefenseOutcome):
     return { resolveDamage: damage, events: StalkerEvent.Recoiled };
   }
   return { resolveDamage: damage, events: 0 };
+}
+
+/**
+ * The target started a parry. Attempts thrown well before a strike (or while it is not
+ * attacking at all) make it wary, and wariness lengthens its next hesitations.
+ */
+export function stalkerSawParry(s: StalkerState): number {
+  if (!stalkerTargetable(s)) return 0;
+  const a = s.attack;
+  const early =
+    s.phase === StalkerPhase.Prowl ||
+    s.phase === StalkerPhase.Recoil ||
+    (s.phase === StalkerPhase.Attack && a !== null && (!a.parryable || s.phaseTick < s.windupTicks - 8));
+  if (!early) return 0;
+  const before = s.wariness;
+  s.wariness = Math.min(1, s.wariness + STALKER_TUNING.warinessPerAttempt);
+  return before < 0.66 && s.wariness >= 0.66 ? StalkerEvent.Wary : 0;
 }
 
 /**
@@ -539,12 +604,20 @@ function startAttack(s: StalkerState, attack: EnemyAttack, rng: DeterministicRng
   setPhase(s, StalkerPhase.Attack);
   s.attack = attack;
   const base = s.eclipsed ? Math.round(attack.windupTicks * STALKER_TUNING.eclipseWindupFactor) : attack.windupTicks;
-  s.windupTicks = base + Math.floor(rng.next() * (attack.feintTicks + 1));
+  const hesitation = attack.parryable ? Math.round(s.wariness * STALKER_TUNING.warinessMaxHesitation) : 0;
+  s.windupTicks = base + Math.floor(rng.next() * (attack.feintTicks + 1)) + hesitation;
   s.attackSerial++;
   s.intent = null;
   s.travelPerTick = 0;
   if (attack.cooldownTicks > 0) s.cooldowns[attack.id] = attack.cooldownTicks;
   return attack.parryable ? StalkerEvent.TelegraphParryable : StalkerEvent.TelegraphPerilous;
+}
+
+function isBehind(s: StalkerState, toTargetYaw: number): boolean {
+  let delta = (toTargetYaw - s.yaw) % (Math.PI * 2);
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  else if (delta < -Math.PI) delta += Math.PI * 2;
+  return Math.abs(delta) > (STALKER_TUNING.rearArcDegrees * Math.PI) / 180;
 }
 
 function beginTravel(s: StalkerState, a: EnemyAttack): void {
@@ -566,3 +639,6 @@ function beginTravel(s: StalkerState, a: EnemyAttack): void {
   }
   s.travelPerTick = distance / ticks;
 }
+
+/** Generic enemy strike (Stalker attacks, the training dummy's parry drill). */
+export type EnemyHit = StalkerHit;

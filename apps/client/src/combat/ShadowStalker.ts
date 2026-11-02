@@ -41,6 +41,8 @@ interface LegRig {
 }
 
 interface Pose {
+  /** Tail sweep (Tail Lash), radians added to every tail segment's yaw. */
+  tailSwing: number;
   spinePitch: number;
   spineY: number;
   spineRoll: number;
@@ -292,6 +294,12 @@ export class ShadowStalker implements CombatTarget {
           target_.legPitch = inWindup ? [0.4, 0.4, -0.6, -0.6] : [1.1, 1.1, -1.1, -1.1];
           if (!inWindup && active < 1) this.#mistBoost = 1;
           rate = 30;
+        } else if (a.id === 'tail-lash') {
+          // Coil the tail to one side, then whip it across the space behind.
+          target_.tailSwing = inWindup ? -1.1 * easeOut(wind) : -1.1 + 2.5 * easeOut(active) - 1.4 * recovery;
+          target_.spineRoll = inWindup ? -0.12 * wind : 0.16 * (1 - recovery);
+          target_.headPitch = -0.2;
+          rate = active > 0 && active < 1 ? 40 : 16;
         } else if (a.id === 'moonless-howl') {
           target_.spinePitch = 0.3 * wind * (1 - recovery);
           target_.headPitch = 1.0 * wind * (1 - recovery);
@@ -351,7 +359,7 @@ export class ShadowStalker implements CombatTarget {
       leg.knee.rotation.x = -Math.max(0, p.legPitch[i]!) * 0.7;
     });
     this.#tail.forEach((seg, i) => {
-      seg.rotation.y = Math.sin(this.#gait * 0.6 + i * 0.8) * 0.25;
+      seg.rotation.y = Math.sin(this.#gait * 0.6 + i * 0.8) * 0.25 + p.tailSwing * (i === 0 ? 0.6 : 0.45);
       seg.rotation.x = -0.25 + i * 0.12;
     });
 
@@ -533,11 +541,12 @@ export class ShadowStalker implements CombatTarget {
 }
 
 function neutral(): Pose {
-  return { spinePitch: 0, spineY: 0, spineRoll: 0, headPitch: 0, legPitch: [0, 0, 0, 0], legSplay: [0, 0, 0, 0] };
+  return { tailSwing: 0, spinePitch: 0, spineY: 0, spineRoll: 0, headPitch: 0, legPitch: [0, 0, 0, 0], legSplay: [0, 0, 0, 0] };
 }
 
 function dampPose(current: Pose, target: Pose, rate: number, dt: number): void {
   const k = 1 - Math.exp(-rate * dt);
+  current.tailSwing += (target.tailSwing - current.tailSwing) * k;
   current.spinePitch += (target.spinePitch - current.spinePitch) * k;
   current.spineY += (target.spineY - current.spineY) * k;
   current.spineRoll += (target.spineRoll - current.spineRoll) * k;

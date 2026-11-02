@@ -1,5 +1,6 @@
 import type { CharacterActionId, MoonPhase, TimeOfDay } from '@frontier/shared-types';
 import { create } from 'zustand';
+import { EMPTY_RECORDS, type HuntRecords } from '../data/progress.ts';
 import type { ToastTone } from '../engine/events.ts';
 import type { PlatformId } from '../platform/index.ts';
 
@@ -21,6 +22,29 @@ export interface GameCommands {
   /** Sandbox shortcut: jump the world clock to the next new-moon night. */
   summonNewMoon(): void;
   clearMarks(): void;
+  toggleStrikeDrill(): void;
+  closeReport(): void;
+  /** Sandbox escape hatch: jump to dawn, ending the hunt without earning the mark. */
+  fleeToDawn(): void;
+}
+
+export interface HuntReport {
+  outcome: 'subdued' | 'survived' | 'faded';
+  seconds: number;
+  /** Share of its Resolve broken at the deepest point, 0..1. */
+  resolveBroken: number;
+  perfectParries: number;
+  bestChain: number;
+  early: number;
+  late: number;
+  guards: number;
+  dodges: number;
+  hitsTaken: number;
+  falls: number;
+  exposures: number;
+  eclipse: boolean;
+  markEarned: boolean;
+  newBests: string[];
 }
 
 export interface BossHud {
@@ -81,6 +105,9 @@ export interface HudState {
     total: number;
     tracking: boolean;
     drill: boolean;
+    strikeDrill: boolean;
+    drillStreak: number;
+    drillBest: number;
   };
   combo: { count: number; at: number };
   boss: BossHud;
@@ -88,6 +115,10 @@ export interface HudState {
   announcement: Announcement | null;
   marks: MarkHud[];
   lockOn: boolean;
+  /** Shown while dead; `fed` = Resolve the Stalker regained from the fall. */
+  fallen: { fed: number } | null;
+  report: HuntReport | null;
+  records: HuntRecords;
   skill: { name: string; level: number; precisionHits: number; goal: number; evolvesInto: string };
   toasts: Toast[];
   debug: { visible: boolean; fps: number; tick: number; x: number; z: number; action: string; stalker: string };
@@ -116,13 +147,28 @@ export const useHud = create<HudState>()(() => ({
     comboStep: 0,
     deflecting: false,
   },
-  target: { name: '', level: 1, hp: 1, maxHp: 1, dps: 0, total: 0, tracking: true, drill: false },
+  target: {
+    name: '',
+    level: 1,
+    hp: 1,
+    maxHp: 1,
+    dps: 0,
+    total: 0,
+    tracking: true,
+    drill: false,
+    strikeDrill: false,
+    drillStreak: 0,
+    drillBest: 0,
+  },
   combo: { count: 0, at: 0 },
   boss: { visible: false, name: '', title: '', resolve: 1, maxResolve: 1, chain: 0, chainGoal: 3, eclipsed: false, status: 'hunting' },
   clock: { period: 'day', moon: 'full', night: 0 },
   announcement: null,
   marks: [],
   lockOn: false,
+  fallen: null,
+  report: null,
+  records: EMPTY_RECORDS,
   skill: { name: '', level: 1, precisionHits: 0, goal: 1000, evolvesInto: '' },
   toasts: [],
   debug: { visible: false, fps: 0, tick: 0, x: 0, z: 0, action: '', stalker: '' },

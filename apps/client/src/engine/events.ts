@@ -13,7 +13,9 @@ export interface GameEventMap {
   };
   playerDamaged: { amount: number; staggered: boolean };
   perfectDodge: { x: number; y: number; z: number };
-  parry: { x: number; y: number; z: number; chain: number; resolveDamage: number };
+  parry: { x: number; y: number; z: number; sourceId: string };
+  /** How a parry attempt was timed against a blow, for teaching feedback. */
+  parryTiming: { kind: 'perfect' | 'early' | 'late' | 'angle'; ms: number };
   guard: { x: number; y: number; z: number; amount: number; broken: boolean };
   /** StalkerEvent flags from the brain or from combat resolution. */
   stalker: { flags: number };

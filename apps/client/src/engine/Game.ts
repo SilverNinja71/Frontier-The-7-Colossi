@@ -4,6 +4,7 @@ import {
   conditionMatches,
   DEFAULT_MOTOR_TUNING,
   deriveCombatStats,
+  DAY_PERIODS,
   DeterministicRng,
   DUAL_BLADES_MOVESET,
   equipmentModifiers,
@@ -15,9 +16,12 @@ import {
   SANDBOX_DAY_SECONDS,
   StalkerEvent,
   StalkerPhase,
+  stalkerAttackResolved,
+  stalkerSawParry,
   stalkerTargetFell,
   timeOfDayAt,
   yawFromDirection,
+  type DefenseOutcome,
   type MotorContext,
 } from '@frontier/combat-math';
 import {
@@ -37,7 +41,7 @@ import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { HitSparks } from '../combat/HitSparks.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
-import { loadMarks, saveMarks } from '../data/progress.ts';
+import { loadMarks, loadRecords, saveMarks, saveRecords, type HuntRecords } from '../data/progress.ts';
 import {
   CRITICAL_STRIKE,
   FIRSTIA_TWIN_FANGS,
@@ -48,7 +52,7 @@ import {
   TRAINING_DUMMY,
 } from '../data/sandbox.ts';
 import type { PlatformService } from '../platform/index.ts';
-import { announce, pushToast, useHud, type BossHud, type GameCommands } from '../ui/store.ts';
+import { announce, pushToast, useHud, type BossHud, type GameCommands, type HuntReport } from '../ui/store.ts';
 import { ArenaTerrain } from './ArenaTerrain.ts';
 import { CameraRig } from './CameraRig.ts';
 import { GameEvents } from './events.ts';
@@ -74,6 +78,24 @@ const LOCK_BREAK_RANGE = 32;
 const STALKER_EMERGE_DISTANCE = 16;
 const STALKER_PHASE_NAMES = ['dormant', 'emerging', 'prowl', 'attack', 'recoil', 'exposed', 'dissolving', 'subdued'] as const;
 const KNOWN_MARKS: Record<string, WorldMarkDefinition> = { [MARK_OF_THE_NIGHT_LYCAON.id]: MARK_OF_THE_NIGHT_LYCAON };
+
+/** Running tally for the current Shadow Stalker hunt. */
+interface HuntTally {
+  startTick: number;
+  perfectParries: number;
+  bestChain: number;
+  early: number;
+  late: number;
+  guards: number;
+  dodges: number;
+  hitsTaken: number;
+  falls: number;
+  exposures: number;
+  eclipse: boolean;
+  lowestResolve: number;
+  outcome: HuntReport['outcome'];
+  markEarned: boolean;
+}
 
 interface Lockable {
   readonly id: string;
@@ -134,6 +156,10 @@ export class Game implements GameCommands {
   /** Died at least once during the current hunt: surviving to dawn no longer earns the mark. */
   #fellTonight = false;
   #wasDead = false;
+  #hunt: HuntTally | null = null;
+  #records: HuntRecords = loadRecords();
+  #reportOpen = false;
+  #fledTonight = false;
   #lockTarget: Lockable | null = null;
   #marks: WorldMarkDefinition[];
   readonly #renderPos = new THREE.Vector3();
@@ -218,6 +244,7 @@ export class Game implements GameCommands {
       touch,
       platformId: platform.id,
       commands: this,
+      records: this.#records,
       skill: { name: CRITICAL_STRIKE.name, level: 1, precisionHits: 0, goal: 1000, evolvesInto: 'Spiral Slash' },
     });
     this.#syncHud();
@@ -263,6 +290,34 @@ export class Game implements GameCommands {
     this.#dummy.tracking = !this.#dummy.tracking;
     pushToast(this.#dummy.tracking ? 'Dummy tracks you — flank for the core' : 'Dummy holds still', 'info');
     this.#syncHud();
+  }
+
+  toggleStrikeDrill(): void {
+    this.#dummy.strikeDrill = !this.#dummy.strikeDrill;
+    pushToast(
+      this.#dummy.strikeDrill ? 'Parry drill ON — parry when its head flashes white' : 'Parry drill OFF',
+      'info',
+    );
+    this.#syncHud();
+  }
+
+  fleeToDawn(): void {
+    if (!this.#stalker.present) return;
+    this.#fledTonight = true;
+    this.#worldTime = nightIndexAt(this.#worldTime) + DAY_PERIODS.dawn + 0.001;
+    pushToast('You flee until dawn…', 'info');
+  }
+
+  closeReport(): void {
+    if (!this.#reportOpen) return;
+    this.#reportOpen = false;
+    useHud.setState({ report: null });
+    if (this.#phase === 'playing') {
+      if (!this.#touch) this.#input.requestPointerLock();
+      this.platform.setAdContext('overworld');
+      this.platform.gameplayStart();
+    }
+    this.#applyRunState();
   }
 
   toggleLock(): void {
@@ -363,23 +418,40 @@ export class Game implements GameCommands {
     this.#player.syncFromPhysics();
     this.#stalker.syncFromPhysics();
     this.#combat.step();
-    this.#combat.resolveEnemyHit(this.#stalker, stalkerResult.hit, SHADOW_STALKER.stats);
+    const stalkerOutcome = this.#combat.resolveEnemyHit(this.#stalker, stalkerResult.hit, SHADOW_STALKER.stats);
+    if (stalkerOutcome) this.#onStalkerOutcome(stalkerOutcome);
+    const drillOutcome = this.#combat.resolveEnemyHit(this.#dummy, dummyResult.strike, TRAINING_DUMMY.stats);
+    if (drillOutcome) this.#onDrillOutcome(drillOutcome);
 
     // No natural healing mid-hunt, and every fall feeds it.
     this.#player.regenBlocked = this.#stalker.present;
     const dead = this.#player.dead;
-    if (dead && !this.#wasDead && this.#stalker.targetable) {
-      this.#fellTonight = true;
-      const regained = stalkerTargetFell(this.#stalker.brain);
-      if (regained > 0) pushToast(`It feeds on your fall · +${Math.round(regained)} Resolve`, 'danger');
+    if (dead && !this.#wasDead) {
+      let fed = 0;
+      if (this.#stalker.targetable) {
+        this.#fellTonight = true;
+        fed = stalkerTargetFell(this.#stalker.brain);
+        if (this.#hunt) this.#hunt.falls++;
+      }
+      useHud.setState({ fallen: { fed } });
+    } else if (!dead && this.#wasDead) {
+      useHud.setState({ fallen: null });
     }
     this.#wasDead = dead;
+    if (this.#hunt) {
+      this.#hunt.lowestResolve = Math.min(this.#hunt.lowestResolve, this.#stalker.brain.resolve);
+      if (!this.#stalker.present) this.#endHunt();
+    }
 
     const pose = this.#player.pose();
     const at = { x: pose.x, y: pose.y + 1.2, z: pose.z };
     if (motorResult.events & MotorEvent.AttackStarted) this.#audio.play('swing', at, 0.8 + this.#player.motor.comboStep * 0.15);
     if (motorResult.events & MotorEvent.DodgeStarted) this.#audio.play('dodge', at);
-    if (motorResult.events & MotorEvent.ParryStarted) this.#audio.play('whiff', at);
+    if (motorResult.events & MotorEvent.ParryStarted) {
+      this.#audio.play('whiff', at);
+      this.#combat.onParryStarted();
+      if (this.#stalker.present) this.#onStalkerEvents(stalkerSawParry(this.#stalker.brain));
+    }
     if (motorResult.events & MotorEvent.Exhausted) pushToast('Exhausted!', 'danger');
     if (dummyResult.slam) this.#resolveSlam();
     if (stalkerResult.events) this.#onStalkerEvents(stalkerResult.events);
@@ -401,6 +473,23 @@ export class Game implements GameCommands {
     const z = Math.cos(angle) * STALKER_EMERGE_DISTANCE;
     this.#stalkerNight = nightIndexAt(this.#worldTime);
     this.#fellTonight = false;
+    this.#fledTonight = false;
+    this.#hunt = {
+      startTick: this.#loop.tick,
+      perfectParries: 0,
+      bestChain: 0,
+      early: 0,
+      late: 0,
+      guards: 0,
+      dodges: 0,
+      hitsTaken: 0,
+      falls: 0,
+      exposures: 0,
+      eclipse: false,
+      lowestResolve: SHADOW_STALKER.stats.maxHp,
+      outcome: 'faded',
+      markEarned: false,
+    };
     this.#onStalkerEvents(this.#stalker.summon(x, z, yawFromDirection(p.x - x, p.z - z)));
   }
 
@@ -416,18 +505,24 @@ export class Game implements GameCommands {
     if (flags & StalkerEvent.TelegraphPerilous) {
       this.#audio.play(stalker.brain.attack?.id === 'moonless-howl' ? 'howl' : 'growl', at, 1.2);
     }
+    if (flags & StalkerEvent.Wary) {
+      pushToast('It has read your rhythm. Stop mashing parry.', 'danger');
+    }
     if (flags & StalkerEvent.Eclipsed) {
+      if (this.#hunt) this.#hunt.eclipse = true;
       announce('Eclipse', "The Shadow Stalker's eyes burn", 'Half its Resolve is gone. It hunts in earnest now.');
       this.#audio.play('howl', at, 1.3);
       this.#camera.addTrauma(0.5);
     }
     if (flags & StalkerEvent.Exposed) {
+      if (this.#hunt) this.#hunt.exposures++;
       pushToast('EXPOSED · STRIKE THE HEART', 'gold');
       this.#audio.play('crit', at);
       this.#camera.addTrauma(0.3);
     }
     if (flags & StalkerEvent.Subdued) {
       const fresh = this.#grantMark();
+      if (this.#hunt) Object.assign(this.#hunt, { outcome: 'subdued', markEarned: fresh });
       announce(
         'World announcement',
         'The Shadow Stalker has been subdued',
@@ -438,10 +533,13 @@ export class Game implements GameCommands {
       this.#setLock(null);
     }
     if (flags & StalkerEvent.Survived) {
-      if (this.#fellTonight) {
+      if (this.#fledTonight) {
+        announce('Dawn breaks', 'You fled the hunt', 'The mark only answers to those who endure the whole night.');
+      } else if (this.#fellTonight) {
         announce('Dawn breaks', 'The Shadow Stalker fades', 'You fell tonight. Survive a whole new-moon night unbroken to earn its mark.');
       } else {
         const fresh = this.#grantMark();
+        if (this.#hunt) Object.assign(this.#hunt, { outcome: 'survived', markEarned: fresh });
         announce(
           'Dawn breaks',
           'You survived the Shadow Stalker',
@@ -449,6 +547,90 @@ export class Game implements GameCommands {
         );
       }
       this.#audio.play('gong');
+    }
+  }
+
+  /** Bookkeeping after the player met one of the Stalker's blows. */
+  #onStalkerOutcome(outcome: DefenseOutcome): void {
+    const brain = this.#stalker.brain;
+    const { resolveDamage, events } = stalkerAttackResolved(brain, outcome);
+    const hunt = this.#hunt;
+    if (outcome === 'parried') {
+      const chain = brain.parryChain;
+      const goal = SHADOW_STALKER.defeatCondition.kind === 'parry-chain' ? SHADOW_STALKER.defeatCondition.requiredChain : chain;
+      this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 2.6), `CHAIN ${Math.min(chain, goal)}/${goal}`, 'parry');
+      if (resolveDamage > 0) {
+        this.#stalker.headPosition(this.#tmp);
+        this.#numbers.spawn(this.#tmp.setY(this.#tmp.y + 0.6), `${resolveDamage}`, 'critical');
+      }
+      if (hunt) {
+        hunt.perfectParries++;
+        hunt.bestChain = Math.max(hunt.bestChain, chain);
+      }
+    } else if (hunt) {
+      if (outcome === 'guarded') hunt.guards++;
+      else if (outcome === 'dodged') hunt.dodges++;
+      else hunt.hitsTaken++;
+    }
+    if (events) this.#onStalkerEvents(events);
+  }
+
+  #onDrillOutcome(outcome: DefenseOutcome): void {
+    const streak = this.#dummy.drillOutcome(outcome);
+    if (outcome === 'parried' && streak > 0 && streak % 5 === 0) {
+      pushToast(streak >= 15 ? `Drill streak ${streak} — ready for the new moon` : `Drill streak ${streak}`, 'gold');
+    }
+  }
+
+  /** The Stalker left the world: close the tally, update records, show the Hunt Report. */
+  #endHunt(): void {
+    const hunt = this.#hunt;
+    if (!hunt) return;
+    this.#hunt = null;
+    const maxResolve = SHADOW_STALKER.stats.maxHp;
+    const seconds = Math.round((this.#loop.tick - hunt.startTick) * SIM_DT);
+    const resolveBroken = hunt.outcome === 'subdued' ? 1 : 1 - hunt.lowestResolve / maxResolve;
+    const records = this.#records;
+    const newBests: string[] = [];
+    if (resolveBroken > records.bestResolveBroken + 1e-6) newBests.push('resolve');
+    if (hunt.bestChain > records.bestChain) newBests.push('chain');
+    if (hunt.outcome === 'subdued' && (records.fastestSubdueSeconds === null || seconds < records.fastestSubdueSeconds)) {
+      newBests.push('time');
+    }
+    this.#records = {
+      hunts: records.hunts + 1,
+      subdued: records.subdued + (hunt.outcome === 'subdued' ? 1 : 0),
+      survived: records.survived + (hunt.outcome === 'survived' ? 1 : 0),
+      bestResolveBroken: Math.max(records.bestResolveBroken, resolveBroken),
+      bestChain: Math.max(records.bestChain, hunt.bestChain),
+      fastestSubdueSeconds: newBests.includes('time') ? seconds : records.fastestSubdueSeconds,
+    };
+    saveRecords(this.#records);
+
+    const report: HuntReport = {
+      outcome: hunt.outcome,
+      seconds,
+      resolveBroken,
+      perfectParries: hunt.perfectParries,
+      bestChain: hunt.bestChain,
+      early: hunt.early,
+      late: hunt.late,
+      guards: hunt.guards,
+      dodges: hunt.dodges,
+      hitsTaken: hunt.hitsTaken,
+      falls: hunt.falls,
+      exposures: hunt.exposures,
+      eclipse: hunt.eclipse,
+      markEarned: hunt.markEarned,
+      newBests,
+    };
+    useHud.setState({ report, records: this.#records });
+    if (this.#phase === 'playing') {
+      this.#reportOpen = true;
+      this.#input.exitPointerLock();
+      this.platform.gameplayStop();
+      this.platform.setAdContext('menu');
+      this.#applyRunState();
     }
   }
 
@@ -537,6 +719,7 @@ export class Game implements GameCommands {
     this.#arena.setNight(night, now);
     this.#audio.setNight(night);
 
+    this.#input.pollGamepad(frameDt);
     const look = this.#input.consumeLook();
     this.#camera.applyLook(look.x, look.y);
     if (this.#phase === 'title') this.#camera.yaw += frameDt * 0.12; // attract-mode orbit
@@ -583,8 +766,8 @@ export class Game implements GameCommands {
   // --------------------------------------------------------------------------
 
   #applyRunState(): void {
-    const running = this.#phase === 'playing' && !this.#adBreak;
-    this.#loop.paused = this.#phase === 'paused' || this.#adBreak;
+    const running = this.#phase === 'playing' && !this.#adBreak && !this.#reportOpen;
+    this.#loop.paused = this.#phase === 'paused' || this.#adBreak || this.#reportOpen;
     this.#input.enabled = running;
     this.#audio.setPaused(!running);
     if (this.#touch) this.#touch.visible = running;
@@ -594,6 +777,14 @@ export class Game implements GameCommands {
     const signal = this.#abort.signal;
     this.#input.bindHotkey('KeyT', () => this.toggleDrill());
     this.#input.bindHotkey('KeyG', () => this.toggleTracking());
+    this.#input.bindHotkey('KeyY', () => this.toggleStrikeDrill());
+    this.#input.bindHotkey('PadR3', () => this.#phase === 'playing' && this.toggleLock());
+    this.#input.bindHotkey('PadStart', () => {
+      if (this.#reportOpen) this.closeReport();
+      else if (this.#phase === 'playing') this.pause();
+      else if (this.#phase === 'paused') this.resume();
+      else this.play();
+    });
     this.#input.bindHotkey('Tab', () => this.#phase === 'playing' && this.toggleLock());
     this.#input.bindHotkey('Mouse1', () => this.#phase === 'playing' && this.toggleLock());
     this.#input.bindHotkey('KeyN', () => this.#phase === 'playing' && this.summonNewMoon());
@@ -649,14 +840,10 @@ export class Game implements GameCommands {
       if (kind === 'weakpoint') pushToast('WEAK POINT', 'gold');
       useHud.setState({ combo: { ...this.#combo } });
     });
-    this.events.on('parry', ({ x, y, z, chain, resolveDamage }) => {
+    this.events.on('parry', ({ x, y, z }) => {
       this.#sparks.burst(x, y, z, 34, gold, 9);
       this.#sparks.burst(x, y, z, 14, white, 5);
-      this.#numbers.spawn(this.#tmp.set(x, y + 0.6, z), chain > 1 ? `PARRY ×${chain}` : 'PARRY', 'parry');
-      if (resolveDamage > 0) {
-        this.#stalker.headPosition(this.#tmp);
-        this.#numbers.spawn(this.#tmp.setY(this.#tmp.y + 0.6), `${resolveDamage}`, 'critical');
-      }
+      this.#numbers.spawn(this.#tmp.set(x, y + 0.6, z), 'PARRY', 'parry');
       this.#rig.parryFlash();
       this.#rig.hitstop(0.09);
       this.#camera.addTrauma(0.22);
@@ -667,7 +854,13 @@ export class Game implements GameCommands {
       this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 2), `-${amount}`, 'player');
       this.#audio.play('guard', { x, y, z });
       this.#camera.addTrauma(0.25);
-      pushToast(broken ? 'Guard broken!' : 'Late parry — guarded', broken ? 'danger' : 'info');
+      if (broken) pushToast('Guard broken!', 'danger');
+    });
+    this.events.on('parryTiming', ({ kind, ms }) => {
+      if (kind === 'perfect') return; // the PARRY burst says it all
+      if (this.#hunt && kind !== 'angle') this.#hunt[kind]++;
+      const label = kind === 'early' ? `EARLY · ${ms} ms` : kind === 'late' ? `LATE · ${ms} ms` : 'FACE THE BLOW';
+      this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 2.3), label, kind === 'late' ? 'late' : 'early');
     });
     this.events.on('playerDamaged', ({ amount, staggered }) => {
       this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 2), `-${amount}`, 'player');
@@ -712,6 +905,9 @@ export class Game implements GameCommands {
         total: this.#engagement.total,
         tracking: this.#dummy.tracking,
         drill: this.#dummy.drillEnabled,
+        strikeDrill: this.#dummy.strikeDrill,
+        drillStreak: this.#dummy.drillStreak,
+        drillBest: this.#dummy.drillBest,
       },
       boss: {
         visible: this.#stalker.present,

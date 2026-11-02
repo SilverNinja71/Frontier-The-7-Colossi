@@ -15,6 +15,21 @@ const MOUSE_BUTTONS: Record<number, number> = {
   2: InputButton.Parry,
 };
 
+/** Standard-mapping gamepad (Xbox labels; PlayStation/Switch map to the same indices). */
+const PAD_BUTTONS: Record<number, number> = {
+  0: InputButton.Dodge, // A
+  1: InputButton.Sprint, // B (hold)
+  2: InputButton.Attack, // X
+  5: InputButton.Parry, // RB
+  6: InputButton.Sprint, // LT
+  7: InputButton.Attack, // RT
+};
+const PAD_HOTKEYS: Record<number, string> = { 9: 'PadStart', 11: 'PadR3' };
+const STICK_DEADZONE = 0.18;
+/** Right stick look speed at full deflection, in mouse-pixel equivalents per second. */
+const PAD_LOOK_X = 950;
+const PAD_LOOK_Y = 600;
+
 /**
  * Collects keyboard, mouse and touch state and turns it into one InputFrame per sim tick.
  * Presses are latched between ticks so a tap shorter than a tick is never lost. Camera look
@@ -26,6 +41,12 @@ export class InputController {
   #virtualHeld = 0;
   #virtualMoveX = 0;
   #virtualMoveY = 0;
+  #padMoveX = 0;
+  #padMoveY = 0;
+  #padHeld = 0;
+  #padPrevMask = 0;
+  /** A gamepad was seen on the last poll. */
+  padConnected = false;
   #pressedLatch = 0;
   #lookX = 0;
   #lookY = 0;
@@ -95,6 +116,57 @@ export class InputController {
     this.#lookY += dy;
   }
 
+  // --- Gamepad --------------------------------------------------------------
+
+  /** Poll once per render frame: sticks, buttons (edge-detected) and pad hotkeys. */
+  pollGamepad(frameDt: number): void {
+    const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    let pad: Gamepad | null = null;
+    for (const candidate of pads) {
+      if (!candidate?.connected) continue;
+      pad = candidate;
+      if (candidate.mapping === 'standard') break;
+    }
+    if (!pad) {
+      if (this.padConnected) this.#releasePad();
+      this.padConnected = false;
+      return;
+    }
+    this.padConnected = true;
+
+    const [lx, ly] = deadzone(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
+    const [rx, ry] = deadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+    this.#padMoveX = lx;
+    this.#padMoveY = -ly;
+    if (rx !== 0 || ry !== 0) this.addLook(rx * PAD_LOOK_X * frameDt, ry * PAD_LOOK_Y * frameDt);
+
+    let mask = 0;
+    let held = 0;
+    pad.buttons.forEach((button, index) => {
+      if (!button.pressed && button.value <= 0.5) return;
+      mask |= 1 << index;
+      held |= PAD_BUTTONS[index] ?? 0;
+    });
+    const down = mask & ~this.#padPrevMask;
+    this.#padPrevMask = mask;
+    for (const [index, code] of Object.entries(PAD_HOTKEYS)) {
+      if (down & (1 << Number(index))) this.#hotkeys.get(code)?.();
+    }
+    if (!this.#enabled) {
+      this.#padHeld = 0;
+      return;
+    }
+    this.#pressedLatch |= held & ~this.#padHeld;
+    this.#padHeld = held;
+  }
+
+  #releasePad(): void {
+    this.#padMoveX = 0;
+    this.#padMoveY = 0;
+    this.#padHeld = 0;
+    this.#padPrevMask = 0;
+  }
+
   // --- Sampling -------------------------------------------------------------
 
   /** Accumulated look delta since the last call, in pixels. */
@@ -110,15 +182,15 @@ export class InputController {
     const seq = ++this.#seq;
     if (!this.#enabled) return { seq, moveX: 0, moveY: 0, viewYaw, held: 0, pressed: 0 };
 
-    let moveX = this.#axis('KeyD', 'ArrowRight') - this.#axis('KeyA', 'ArrowLeft') + this.#virtualMoveX;
-    let moveY = this.#axis('KeyW', 'ArrowUp') - this.#axis('KeyS', 'ArrowDown') + this.#virtualMoveY;
+    let moveX = this.#axis('KeyD', 'ArrowRight') - this.#axis('KeyA', 'ArrowLeft') + this.#virtualMoveX + this.#padMoveX;
+    let moveY = this.#axis('KeyW', 'ArrowUp') - this.#axis('KeyS', 'ArrowDown') + this.#virtualMoveY + this.#padMoveY;
     const length = Math.hypot(moveX, moveY);
     if (length > 1) {
       moveX /= length;
       moveY /= length;
     }
 
-    let held = this.#mouseHeld | this.#virtualHeld | extraHeld;
+    let held = this.#mouseHeld | this.#virtualHeld | this.#padHeld | extraHeld;
     for (const code of this.#keys) held |= KEY_BUTTONS[code] ?? 0;
     const pressed = this.#pressedLatch;
     this.#pressedLatch = 0;
@@ -173,5 +245,14 @@ export class InputController {
     this.#virtualMoveX = 0;
     this.#virtualMoveY = 0;
     this.#pressedLatch = 0;
+    this.#padHeld = 0;
   }
+}
+
+/** Radial deadzone, rescaled so motion starts smoothly at the edge of the zone. */
+function deadzone(x: number, y: number): [number, number] {
+  const magnitude = Math.hypot(x, y);
+  if (magnitude < STICK_DEADZONE) return [0, 0];
+  const scaled = Math.min(1, (magnitude - STICK_DEADZONE) / (1 - STICK_DEADZONE));
+  return [(x / magnitude) * scaled, (y / magnitude) * scaled];
 }

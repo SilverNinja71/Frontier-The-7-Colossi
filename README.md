@@ -104,13 +104,20 @@ declares `stats?: never`.
 | N                | pause menu       | Call the new moon (skip to the Shadow Stalker) |
 | T                | pause menu       | Slam drill: telegraphed AoE every 5 s         |
 | G                | pause menu       | Dummy tracking on/off                         |
+| Y                | pause menu       | Parry drill: the dummy swings at you          |
 | Esc / P          | II               | Pause (CrazyGames `gameplayStop`, banner slot) |
 | F3               | —                | Debug overlay                                 |
+
+**Gamepad** (standard mapping: Xbox, PlayStation, Switch Pro): left stick move, right stick camera,
+X / RT strike, A dodge, RB parry, B / LT (hold) sprint, R3 lock on, Start pause / menus.
 
 Things to try:
 - With tracking on, the dummy turns to face you at 55°/s. Dodge-roll around it to strike the
   glowing core on its back. Those crits count toward *Spiral Slash*.
 - Turn on the slam drill and roll *through* the red ring as it lands for a **Perfect Dodge**.
+- Turn on the **parry drill** (Y). The dummy swings with the Stalker's tells: its head glows gold,
+  then flashes white just before impact, with random hesitations. Every attempt tells you
+  **EARLY · n ms** or **LATE · n ms**, and the frame tracks your perfect-parry streak.
 
 ## The Shadow Stalker (Unique Colossus #1)
 
@@ -134,6 +141,11 @@ It is meant to be **brutal**. Expect to lose many nights before you subdue it.
   against 1,000 HP: three mistakes and you are down.
 - **Eclipse** below half Resolve: faster windups, faster chases, shorter pauses, and an
   unparried lunge flows straight into the claw combo.
+- **Tail Lash:** standing behind it is not safe. It whips its tail at anyone lingering there.
+- **It reads parry spam.** Parries thrown well before a strike (or while it is not attacking)
+  make it wary; a wary Stalker hesitates longer, so mashing loses to patience.
+- **Timing feedback:** every miss against its parryable blows reads EARLY or LATE in ms. A
+  "guarded" blow means you pressed too early: the deflect window had already passed.
 - **No mercy:** no health regeneration while it hunts, late parries only halve damage, and each
   time it kills you it regains 35% of its Resolve.
 - **Subdue it, or survive the whole night without dying once**, to earn the permanent
@@ -154,6 +166,11 @@ parryable blows, a dodge for perilous ones) and punish each exposure like a stro
 
 The two ends of this curve are locked in as tests, so tuning changes cannot quietly make it
 easy or impossible.
+
+Each hunt ends with a **Hunt Report**: Resolve broken, length, perfect parries, best chain,
+early/late misses, hits taken, falls, plus one coaching tip drawn from your numbers. Personal
+bests are saved in this browser. Dying shows **YOU FELL** (and how much Resolve it fed on). The
+pause menu's *Flee until dawn* ends a hunt early but forfeits the mark.
 
 ## CrazyGames SDK wrapper
 
@@ -188,12 +205,12 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
 
 ## Verification
 
-- `npm run check`: typecheck, 47 unit tests (motor, dodge distance/i-frames, combo/cancel,
+- `npm run check`: typecheck, 50 unit tests (motor, dodge distance/i-frames, combo/cancel,
   parry windows/frontal arc/guard break, lock-on strafing, stamina exhaustion, hit registration
   incl. directional weak points, damage, marks, skill evolution, world clock and moon phases,
   simulated Shadow Stalker fights (a perfect-parry bot subdues it, a passive one never exposes
   it, dawn dissolves it, seeds are deterministic), its difficulty envelope, hesitating
-  windups, per-attack deflect windows, Eclipse and feeding, SDK wrapper lifecycle/policy/errors/
+  windups, per-attack deflect windows, Eclipse and feeding, Tail Lash, parry-spam wariness, SDK wrapper lifecycle/policy/errors/
   throttling/timeouts), and the production build.
 - The production build was driven in headless Chromium: combo hits and the DPS meter, a
   precision core crit from behind, the slam drill (150 damage + stagger) and a perfect dodge
@@ -202,7 +219,9 @@ when entering a no-banner context, and stable error reasons (`policy`, `cooldown
   requestBanner → rewarded ad → gameplayStart`). The night encounter was driven too: emergence
   announcement, boss frame, lock-on, IMMUNE strikes, landed parries, the 危 peril warning and
   ring, its full attack cycle (pounce, howl, lunge, claw combo), respawn grace, and the mark
-  panel/tattoo after a reload. No console errors.
+  panel/tattoo after a reload. Later: the parry drill's EARLY/LATE feedback, a stubbed gamepad
+  (stick movement, strike, lock-on, Start to pause), the YOU FELL overlay, fleeing to dawn and
+  the Hunt Report. No console errors.
 
 ## Phase 2 candidates
 

@@ -18,6 +18,7 @@ import {
   nextNewMoonNight,
   resolveIncomingAttack,
   stalkerAttackResolved,
+  stalkerSawParry,
   stalkerStruck,
   stalkerTargetFell,
   stepMotor,
@@ -317,5 +318,59 @@ describe('Shadow Stalker difficulty', () => {
     const regained = stalkerTargetFell(s);
     expect(regained).toBeCloseTo(STALKER_TUNING.maxResolve * STALKER_TUNING.feedOnFall);
     expect(s.parryChain).toBe(0);
+  });
+});
+
+describe('Shadow Stalker awareness', () => {
+  it('lashes its tail at a target standing behind it', () => {
+    const s = createStalkerState();
+    summonStalker(s, 0, 0, 0); // faces -Z
+    s.phase = StalkerPhase.Prowl;
+    s.phaseTick = 0;
+    s.idleTicks = 30;
+    const target = { x: 0, y: 0, z: 2.6, yaw: 0 }; // directly behind
+    const rng = new DeterministicRng(5);
+    let landed = false;
+    for (let t = 0; t < 40 && !landed; t++) {
+      const out = stepStalker(s, { target, targetAlive: true, isNight: true, rng, dt: SIM_DT });
+      if (t === 0) expect(s.attack?.id).toBe('tail-lash');
+      if (out.hit) {
+        expect(out.hit.pose.yaw).toBeCloseTo(s.yaw + Math.PI);
+        landed = testMeleeHit(out.hit.pose, out.hit.attack, target, PLAYER_HURTBOXES) !== null;
+      }
+    }
+    expect(landed).toBe(true);
+  });
+
+  it('grows wary of parry spam and hesitates longer', () => {
+    const windupWith = (wariness: number) => {
+      const s = createStalkerState();
+      summonStalker(s, 0, -3, 0);
+      s.phase = StalkerPhase.Prowl;
+      s.phaseTick = 0;
+      s.wariness = wariness;
+      s.intent = STALKER_ATTACKS['rending-claw-1']!;
+      stepStalker(s, { target: { x: 0, y: 0, z: 0, yaw: 0 }, targetAlive: true, isNight: true, rng: new DeterministicRng(11), dt: SIM_DT });
+      return s.windupTicks;
+    };
+    expect(windupWith(1) - windupWith(0)).toBe(STALKER_TUNING.warinessMaxHesitation);
+
+    const s = createStalkerState();
+    summonStalker(s, 0, -3, 0);
+    s.phase = StalkerPhase.Prowl;
+    expect(stalkerSawParry(s)).toBe(0);
+    expect(stalkerSawParry(s) & StalkerEvent.Wary).toBeTruthy();
+    expect(s.wariness).toBeGreaterThanOrEqual(0.66);
+  });
+
+  it('does not count a well-timed parry as spam', () => {
+    const s = createStalkerState();
+    summonStalker(s, 0, -3, 0);
+    s.phase = StalkerPhase.Attack;
+    s.attack = STALKER_ATTACKS['rending-claw-1']!;
+    s.windupTicks = 12;
+    s.phaseTick = 10; // two ticks before the strike
+    stalkerSawParry(s);
+    expect(s.wariness).toBe(0);
   });
 });

@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 
-export type DamageNumberKind = 'normal' | 'critical' | 'weakpoint' | 'player' | 'miss' | 'immune' | 'parry';
+export type DamageNumberKind =
+  | 'normal'
+  | 'critical'
+  | 'weakpoint'
+  | 'player'
+  | 'miss'
+  | 'immune'
+  | 'parry'
+  | 'early'
+  | 'late';
 
 const STYLE: Record<DamageNumberKind, string> = {
   normal: 'text-white text-xl',
@@ -10,6 +19,8 @@ const STYLE: Record<DamageNumberKind, string> = {
   miss: 'text-sky-300 text-xl italic',
   immune: 'text-slate-300/80 text-base italic tracking-widest',
   parry: 'text-amber-100 text-3xl tracking-wider',
+  early: 'text-sky-300 text-lg tracking-wider',
+  late: 'text-orange-300 text-lg tracking-wider',
 };
 
 interface Floating {

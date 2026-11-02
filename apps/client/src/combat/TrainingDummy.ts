@@ -1,5 +1,13 @@
-import type { DamageResult, MeleeHit } from '@frontier/combat-math';
-import { turnToward, yawFromDirection } from '@frontier/combat-math';
+import {
+  DeterministicRng,
+  turnToward,
+  yawFromDirection,
+  type DamageResult,
+  type DefenseOutcome,
+  type EnemyAttack,
+  type EnemyHit,
+  type MeleeHit,
+} from '@frontier/combat-math';
 import type { GroundPose, Hurtbox, MonsterDefinition } from '@frontier/shared-types';
 import * as THREE from 'three';
 import type { PhysicsWorld } from '../engine/PhysicsWorld.ts';
@@ -11,7 +19,42 @@ const DRILL_TELEGRAPH_TICKS = 36;
 export const DRILL_RADIUS = 4.6;
 const REGEN_DELAY_TICKS = 120;
 
+/**
+ * The parry drill's practice swing: the same tells, hesitations and deflect window as the
+ * Shadow Stalker's claws, at a fraction of the damage.
+ */
+export const DUMMY_STRIKE: EnemyAttack = {
+  id: 'dummy-practice-swing',
+  name: 'Practice Swing',
+  windupTicks: 10,
+  activeTicks: 3,
+  recoveryTicks: 12,
+  parryable: true,
+  motionValue: 0.4,
+  origin: 'self',
+  reach: 3.0,
+  arcDegrees: 120,
+  heightMin: 0,
+  heightMax: 2.2,
+  travel: 0,
+  travelLeadTicks: 0,
+  deflectTicks: 5,
+  feintTicks: 6,
+  commitTicks: 3,
+  minRange: 0,
+  maxRange: 3.2,
+  cooldownTicks: 0,
+  weight: 0,
+  staggerTicks: 8,
+};
+const STRIKE_TELL_TICKS = 4;
+const STRIKE_TRIGGER_RANGE = 4.5;
+const TELL_GOLD = new THREE.Color('#ffc14d');
+const TELL_WHITE = new THREE.Color('#ffffff');
+
 export interface DummyStepResult {
+  /** Parry drill: the practice swing's live hitbox this tick. */
+  strike: EnemyHit | null;
   /** Set on the tick the drill slam lands. */
   slam: boolean;
   reset: boolean;
@@ -34,6 +77,10 @@ export class TrainingDummy implements CombatTarget {
   hp: number;
   tracking = true;
   drillEnabled = false;
+  /** Parry drill: telegraphed practice swings at the player. */
+  strikeDrill = false;
+  drillStreak = 0;
+  drillBest = 0;
 
   readonly #sway = new THREE.Group();
   readonly #flashMaterials: THREE.MeshStandardMaterial[] = [];
@@ -52,6 +99,15 @@ export class TrainingDummy implements CombatTarget {
   #telegraphProgress = -1;
   #shockwaveAge = -1;
   #prevYaw: number;
+  readonly #rng = new DeterministicRng(77);
+  readonly #arm: THREE.Mesh;
+  readonly #headMaterial: THREE.MeshStandardMaterial;
+  /** -1 while waiting; otherwise the tick within the current practice swing. */
+  #strikeTick = -1;
+  #strikeWindup = DUMMY_STRIKE.windupTicks;
+  #strikeWait = 45;
+  #strikeSerial = 0;
+  #recoil = 0;
 
   constructor(scene: THREE.Scene, physics: PhysicsWorld, def: MonsterDefinition, position: THREE.Vector3) {
     this.pose = { x: position.x, y: position.y, z: position.z, yaw: 0 };
@@ -89,8 +145,10 @@ export class TrainingDummy implements CombatTarget {
     add(new THREE.CapsuleGeometry(0.3, 0.42, 3, 8), straw, 0.75);
     add(new THREE.CapsuleGeometry(0.4, 0.38, 3, 10), straw, 1.22);
     add(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 10), rope, 0.98);
-    add(new THREE.CylinderGeometry(0.06, 0.06, 1.7, 6), wood, 1.42).rotation.z = Math.PI / 2;
+    this.#arm = add(new THREE.CylinderGeometry(0.06, 0.06, 1.7, 6), wood, 1.42);
+    this.#arm.rotation.z = Math.PI / 2;
     add(new THREE.SphereGeometry(0.25, 10, 8), sack, 1.8);
+    this.#headMaterial = sack;
     // Painted "face" marks the front (-Z) so players can read its facing.
     add(new THREE.BoxGeometry(0.26, 0.05, 0.02), rope, 1.83, -0.24);
     add(new THREE.BoxGeometry(0.05, 0.22, 0.02), rope, 1.76, -0.245);
@@ -128,7 +186,7 @@ export class TrainingDummy implements CombatTarget {
 
   /** Sim tick. `target` is the player's feet pose. */
   step(target: GroundPose): DummyStepResult {
-    const result: DummyStepResult = { slam: false, reset: false };
+    const result: DummyStepResult = { strike: null, slam: false, reset: false };
     this.#prevYaw = this.pose.yaw;
 
     if (this.tracking) {
@@ -155,7 +213,43 @@ export class TrainingDummy implements CombatTarget {
       this.#drillTick = 0;
       this.#telegraphProgress = -1;
     }
+
+    if (this.strikeDrill) {
+      result.strike = this.#stepStrike(target);
+    } else {
+      this.#strikeTick = -1;
+    }
     return result;
+  }
+
+  /** Feed back how the player met a practice swing; returns the new streak. */
+  drillOutcome(outcome: DefenseOutcome): number {
+    if (outcome === 'parried') {
+      this.drillStreak++;
+      this.drillBest = Math.max(this.drillBest, this.drillStreak);
+      this.#recoil = 1;
+      this.#kick(0, 1.2);
+    } else if (outcome !== 'dodged') {
+      this.drillStreak = 0;
+    }
+    return this.drillStreak;
+  }
+
+  #stepStrike(target: GroundPose): EnemyHit | null {
+    if (this.#strikeTick < 0) {
+      const near = Math.hypot(target.x - this.pose.x, target.z - this.pose.z) <= STRIKE_TRIGGER_RANGE;
+      if (--this.#strikeWait > 0 || !near) return null;
+      this.#strikeTick = 0;
+      this.#strikeSerial++;
+      this.#strikeWindup = DUMMY_STRIKE.windupTicks + Math.floor(this.#rng.next() * (DUMMY_STRIKE.feintTicks + 1));
+    }
+    const t = this.#strikeTick;
+    const live = t >= this.#strikeWindup && t < this.#strikeWindup + DUMMY_STRIKE.activeTicks;
+    if (++this.#strikeTick >= this.#strikeWindup + DUMMY_STRIKE.activeTicks + DUMMY_STRIKE.recoveryTicks) {
+      this.#strikeTick = -1;
+      this.#strikeWait = 30 + Math.floor(this.#rng.next() * 40);
+    }
+    return live ? { attack: DUMMY_STRIKE, serial: this.#strikeSerial, pose: { ...this.pose } } : null;
   }
 
   /** Applies authoritative damage and the visual reaction. */
@@ -208,6 +302,23 @@ export class TrainingDummy implements CombatTarget {
     }
     const pulse = 1 + Math.sin(this.#time * 5) * 0.12;
     this.#core.scale.setScalar(pulse);
+
+    // Practice swing: arm draws back, then sweeps; the head glows gold, then white on impact.
+    this.#recoil = Math.max(0, this.#recoil - dt * 3);
+    let swing = 0;
+    const st = this.#strikeTick - 1 + alpha;
+    if (this.#strikeTick >= 0) {
+      const w = this.#strikeWindup;
+      if (st < w) {
+        swing = -1.0 * Math.min(1, st / w);
+        this.#headMaterial.emissive.copy(st >= w - STRIKE_TELL_TICKS ? TELL_WHITE : TELL_GOLD);
+        this.#headMaterial.emissiveIntensity = 1.3;
+      } else {
+        const k = Math.min(1, (st - w) / DUMMY_STRIKE.activeTicks);
+        swing = -1.0 + 2.4 * k;
+      }
+    }
+    this.#arm.rotation.set(0, swing - this.#recoil * 0.6, Math.PI / 2);
 
     const telegraph = this.#telegraph.material as THREE.MeshBasicMaterial;
     if (this.#telegraphProgress >= 0) {

@@ -4,6 +4,7 @@ import {
   applyStagger,
   createMotorState,
   isInvulnerable,
+  MotorEvent,
   revive,
   stepMotor,
   type CombatStats,
@@ -45,6 +46,9 @@ export class PlayerCharacter {
   #ticksSinceSpawn = Infinity;
   /** Set while a colossus hunts: no natural healing mid-fight. */
   regenBlocked = false;
+  /** Simulation ticks this character has lived through (for timing feedback). */
+  tick = 0;
+  lastParryStartTick = Number.NEGATIVE_INFINITY;
   #lastStep: MotorStepResult = { velX: 0, velZ: 0, events: 0 };
 
   constructor(
@@ -97,6 +101,7 @@ export class PlayerCharacter {
     const dt = this.motorContext.dt;
     Object.assign(this.#prev, this.#curr);
     this.#ticksSinceSpawn++;
+    this.tick++;
 
     if (this.dead) {
       if (this.motor.actionTick++ >= RESPAWN_TICKS) this.#respawn();
@@ -106,6 +111,7 @@ export class PlayerCharacter {
 
     const result = stepMotor(this.motor, input, this.motorContext);
     this.#lastStep = result;
+    if (result.events & MotorEvent.ParryStarted) this.lastParryStartTick = this.tick;
 
     this.#verticalVelocity = this.#grounded ? -2 : Math.max(-40, this.#verticalVelocity - GRAVITY * dt);
     this.#controller.computeColliderMovement(this.collider, {
