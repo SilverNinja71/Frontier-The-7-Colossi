@@ -47,6 +47,8 @@ import { CombatSystem } from '../combat/CombatSystem.ts';
 import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { loadParticleAtlas, SpriteFx, type ParticleAtlas } from '../combat/SpriteFx.ts';
 import { loadTownArt, Town, type TownArt } from './Town.ts';
+import { HunterBody, loadHunter } from './HunterBody.ts';
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GluttonousSerpent } from '../combat/GluttonousSerpent.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
@@ -238,20 +240,21 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit, skin, layers, atlas, townArt] = await Promise.all([
+    const [rapier, kit, skin, layers, atlas, townArt, hunter] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
       loadPrivateSkin(),
       loadTerrainLayers(`${import.meta.env.BASE_URL}assets/terrain/layers.webp`),
       loadParticleAtlas(`${import.meta.env.BASE_URL}assets/vfx/`),
       loadTownArt(`${import.meta.env.BASE_URL}assets/town/`),
+      loadHunter(`${import.meta.env.BASE_URL}assets/characters/hunter.glb`),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas, townArt);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas, townArt, hunter);
   }
 
   private constructor(
@@ -265,6 +268,7 @@ export class Game implements GameCommands {
     layers: TerrainLayerImage,
     atlas: ParticleAtlas,
     townArt: TownArt | null,
+    hunter: GLTF | null,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
@@ -300,6 +304,7 @@ export class Game implements GameCommands {
 
     this.#rig = new PlayerRig();
     this.#rig.setWeapon(this.#weapon.weaponClass === 'staff' ? 'staff' : 'blades');
+    if (hunter) this.#rig.attachHunter(new HunterBody(hunter));
     this.#bladeTrails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
     this.#staffTrails = this.#rig.staffAnchors.map((a) => new BladeTrail(a.base, a.tip, '#ffd77a'));
     const trailMeshes = [...this.#bladeTrails, ...this.#staffTrails].map((t) => t.mesh);
@@ -488,6 +493,11 @@ export class Game implements GameCommands {
     this.#camera.resetBehind(yaw);
     this.#setLock(null);
     this.closeMap();
+  }
+
+  /** Dev-only: swing the camera round the player (0 = behind, π = in front). */
+  debugOrbit(angle: number): void {
+    this.#camera.resetBehind(this.#player.motor.facingYaw + angle);
   }
 
   /** Dev-only: stand at (x, z) looking towards (tx, tz). */

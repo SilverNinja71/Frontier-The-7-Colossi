@@ -1,0 +1,5 @@
+hunter.glb: models and animations by Quaternius (https://quaternius.com), CC0 1.0:
+- Modular Character Outfits - Fantasy (Ranger outfit, recoloured)
+- Universal Base Characters (face and eyes)
+- Universal Animation Library 1 and 2 (clips)
+Assembled by apps/asset-pipeline/src/build-hunter.ts.

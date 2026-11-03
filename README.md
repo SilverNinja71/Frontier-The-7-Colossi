@@ -194,6 +194,29 @@ are paved with generated cobbles. The terrain levels a plateau for the town (`FI
 scenery keeps clear, everything collides, the town is the tenth landmark (waystone on the
 square), and the map and minimap paint its roofs, walls and keep.
 
+**The hunter.** The player is an original hooded hunter assembled from Quaternius' CC0 packs:
+the Ranger outfit (Modular Character Outfits - Fantasy) recoloured to the game's own teal, the
+face and eyes from Universal Base Characters, and clips from the Universal Animation Library 1
+and 2, all on one 65-bone skeleton:
+
+```bash
+npm run hunter -w @frontier/asset-pipeline -- --outfit "<Outfits>/…/Male_Ranger.gltf" \
+  --base "<Base Characters>/…/Superhero_Male_FullBody.gltf" \
+  --ual1 "<UAL1>/…/UAL1_Standard.glb" --ual2 "<UAL2>/…/UAL2_Standard.glb"
+```
+
+The outfit has no face, so the head and eyes are cut out of the base body by bone weight (both
+share bind poses) and re-bound to the outfit's skeleton by joint name; 17 chosen clips are copied
+onto the joints by name and resampled; meshes are simplified per part (30.6k → 15.9k
+triangles), normal and ORM maps dropped, textures WebP, geometry meshopt-packed: `hunter.glb`,
+~1.3 MB. `HunterBody` plays the clips through one mixer and mounts the game's blades and staff
+in grips derived from the skeleton (a blade runs across the knuckles, from `pinky_01` past
+`index_01`), so the trail anchors and glow follow the fists. `PlayerRig` drives it from the
+motor: guard / walk / jog / sprint by ground speed, a roll turned towards the dodge, each combo
+step as a strike clip timed to windup + active frames then its recovery clip timed to the
+recovery frames, block for parries, knockback for stagger, death. The hunt mark glows as bands
+round both forearms. The procedural stand-in stays as the fallback (and under private skins).
+
 **Characters from statues (private, personal use).** `npm run character -w @frontier/asset-pipeline`
 turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character for the player
 rig: it cuts the mesh into torso and head, arms, legs and weapon by nearest bone, fits the

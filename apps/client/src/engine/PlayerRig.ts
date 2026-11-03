@@ -2,6 +2,7 @@ import { attackStepTotalTicks, type AttackStep, type MotorState, type MotorTunin
 import { CharacterAction } from '@frontier/shared-types';
 import * as THREE from 'three';
 import type { CharacterSkin, SkinPart } from './CharacterSkin.ts';
+import type { HunterBody } from './HunterBody.ts';
 
 /**
  * Procedurally animated stand-in for the glTF player model (the asset pipeline replaces the
@@ -37,6 +38,11 @@ export interface RigFrame {
 }
 
 const SKIN = '#e2ad84';
+
+/** Hunter clips per combo step (apps/asset-pipeline build-hunter.ts names). */
+const BLADE_CLIPS = ['slash-a', 'slash-b', 'slash-c'];
+const STAFF_CLIPS = ['dash', 'slash-b', 'slash-heavy', 'slash-c'];
+const TICK_SECONDS = 1 / 30;
 const HALF_PI = Math.PI / 2;
 
 export class PlayerRig {
@@ -69,6 +75,19 @@ export class PlayerRig {
   readonly #tattoo = new THREE.Group();
   readonly #tattooMaterial = new THREE.MeshBasicMaterial({ color: '#8b6bff' });
   #parryFlash = 0;
+  /** The animated hunter, when loaded (set aside while a private skin is worn). */
+  #hunterBody: HunterBody | null = null;
+  #hunter: {
+    hidden: THREE.Object3D[];
+    homes: { hand: THREE.Object3D; parent: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion }[];
+    marks: THREE.Mesh[];
+  } | null = null;
+  #hunterKey = '';
+  #hunterEpoch = 0;
+  #lastAction = -1;
+  #lastActionTick = 0;
+  #lastSerial = -1;
+  #hunterYaw = 0;
   #gaitPhase = 0;
   #time = 0;
   #freeze = 0;
@@ -205,9 +224,76 @@ export class PlayerRig {
     return this.#weapon === 'staff' ? this.staffAnchors : this.bladeAnchors;
   }
 
+  /** Wears the animated hunter body in place of the stand-in (unless a private skin is on). */
+  attachHunter(body: HunterBody): void {
+    this.#hunterBody = body;
+    if (!this.#skin) this.#activateHunter();
+  }
+
+  get hunterActive(): boolean {
+    return this.#hunter !== null;
+  }
+
+  #activateHunter(): void {
+    const body = this.#hunterBody;
+    if (!body || this.#hunter) return;
+    const keep = new Set<THREE.Object3D>(this.#blades);
+    this.#staff.traverse((o) => keep.add(o));
+    const hidden: THREE.Object3D[] = [];
+    this.root.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.visible && !keep.has(o)) hidden.push(o);
+    });
+    for (const o of hidden) o.visible = false;
+    this.#spin.add(body.object);
+    // The weapon hands (blades, staff, trail anchors) move into the hunter's fists.
+    const homes = this.#hands.map((hand, i) => {
+      const home = { hand, parent: hand.parent!, position: hand.position.clone(), quaternion: hand.quaternion.clone() };
+      (i === 0 ? body.gripR : body.gripL).add(hand);
+      hand.position.set(0, 0, 0);
+      hand.quaternion.identity();
+      return home;
+    });
+    // The hunt mark becomes glowing bands round both forearms.
+    const marks: THREE.Mesh[] = [];
+    const band = new THREE.TorusGeometry(0.055, 0.009, 4, 14);
+    for (const forearm of body.forearms) {
+      const scale = new THREE.Vector3();
+      forearm.updateWorldMatrix(true, false);
+      forearm.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+      for (const t of [0.35, 0.55]) {
+        const ring = new THREE.Mesh(band, this.#tattooMaterial);
+        ring.scale.setScalar(1 / scale.x);
+        // UE-style bones run along their local X: rings sit round the forearm's length.
+        ring.position.set(((forearm.name.endsWith('_l') ? 1 : -1) * t * 0.26) / scale.x, 0, 0);
+        ring.rotation.y = Math.PI / 2;
+        ring.visible = false;
+        forearm.add(ring);
+        marks.push(ring);
+      }
+    }
+    this.#hunter = { hidden, homes, marks };
+    this.#hunterKey = '';
+  }
+
+  #deactivateHunter(): void {
+    const hunter = this.#hunter;
+    if (!hunter || !this.#hunterBody) return;
+    for (const { hand, parent, position, quaternion } of hunter.homes) {
+      parent.add(hand);
+      hand.position.copy(position);
+      hand.quaternion.copy(quaternion);
+    }
+    for (const m of hunter.marks) m.removeFromParent();
+    for (const o of hunter.hidden) o.visible = true;
+    this.#hunterBody.object.removeFromParent();
+    this.#hunter = null;
+    this.setWeapon(this.#weapon);
+  }
+
   /** Mark of the Moonless Hunt: violet brands on the bare torso and arms that flare at night. */
   setMark(owned: boolean, night: number): void {
-    const show = owned && !this.#skin; // armoured skins hide the brands
+    if (this.#hunter) for (const m of this.#hunter.marks) m.visible = owned;
+    const show = owned && !this.#skin && !this.#hunter; // armour and the hunter's coat hide the brands
     this.#tattoo.visible = show;
     for (const shoulder of [this.#shoulderR, this.#shoulderL]) {
       for (const child of shoulder.children) if (child.userData.tattoo) child.visible = show;
@@ -227,6 +313,7 @@ export class PlayerRig {
    */
   applySkin(skin: CharacterSkin): void {
     this.removeSkin();
+    this.#deactivateHunter();
     const joints = [this.#shoulderR, this.#shoulderL, this.#hipR, this.#hipL, ...this.#hands];
     this.#restJoints = joints.map((j) => j.position.clone());
 
@@ -285,6 +372,7 @@ export class PlayerRig {
     joints.forEach((j, i) => this.#restJoints[i] && j.position.copy(this.#restJoints[i]!));
     this.#skin = null;
     this.setWeapon(this.#weapon); // re-apply blade / staff visibility
+    this.#activateHunter();
   }
 
   /** Bright blade flare on a perfect parry. */
@@ -418,6 +506,8 @@ export class PlayerRig {
     // Negative pitch streams the scarf backwards (+Z).
     for (const [i, tail] of this.#scarfTails.entries()) tail.rotation.x = -(0.15 + trail) + sway * (i ? 1 : -1);
 
+    if (this.#hunter && this.#hunterBody) this.#driveHunter(this.#hunterBody, frame, tickTime, frameDt);
+
     const glow = frame.invulnerable ? 0.55 : 0;
     for (const m of this.#glowMaterials) {
       m.emissive.setRGB(0.25, 0.55, 1);
@@ -429,6 +519,80 @@ export class PlayerRig {
     if (this.#skin) this.#skin.staffMaterial.emissiveIntensity = this.#staffGold.emissiveIntensity * 0.35;
     this.#bladeMaterial.emissiveIntensity =
       (motor.action === CharacterAction.Attack ? 0.9 : deflecting ? 1.5 : 0.08) + this.#parryFlash * 4;
+  }
+
+  /** Picks the hunter's clip from the motor state; attacks are timed to their frame data. */
+  #driveHunter(body: HunterBody, frame: RigFrame, tickTime: number, frameDt: number): void {
+    const { motor, moveset, tuning } = frame;
+    // A new action (or a new swing) restarts its clip even when the name repeats.
+    if (motor.action !== this.#lastAction || motor.actionTick < this.#lastActionTick || motor.attackSerial !== this.#lastSerial) this.#hunterEpoch++;
+    this.#lastAction = motor.action;
+    this.#lastActionTick = motor.actionTick;
+    this.#lastSerial = motor.attackSerial;
+    const once = (clip: string, timeScale: number, key: string, fade = 0.08) => {
+      const k = `${key}:${this.#hunterEpoch}`;
+      if (k === this.#hunterKey) return;
+      this.#hunterKey = k;
+      body.play(clip, { fade, timeScale, loop: false, restart: true });
+    };
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    let yaw = 0;
+
+    switch (motor.action) {
+      case CharacterAction.Free: {
+        this.#hunterKey = 'free';
+        const speed = frame.groundSpeed;
+        if (speed < 0.35) {
+          body.play('guard', { fade: 0.25 });
+        } else if (motor.sprinting && speed > 4.5) {
+          body.play('sprint', { fade: 0.2 });
+          body.setTimeScale(clamp(speed / 7, 0.7, 1.5));
+        } else if (speed < 2.6) {
+          body.play('walk', { fade: 0.2 });
+          body.setTimeScale(clamp(speed / 1.6, 0.6, 1.6));
+        } else {
+          body.play('jog', { fade: 0.2 });
+          body.setTimeScale(clamp(speed / 4.2, 0.7, 1.5));
+        }
+        break;
+      }
+      case CharacterAction.Dodge: {
+        once('roll', body.duration('roll') / Math.max(0.2, tuning.dodge.ticks * TICK_SECONDS), 'dodge', 0.05);
+        // Roll towards the dodge, not the facing.
+        const dodgeYaw = Math.atan2(-motor.dodgeDirX, -motor.dodgeDirZ);
+        yaw = Math.atan2(Math.sin(dodgeYaw - motor.facingYaw), Math.cos(dodgeYaw - motor.facingYaw));
+        break;
+      }
+      case CharacterAction.Attack: {
+        const step = moveset.steps[motor.comboStep] ?? moveset.steps[0]!;
+        const clips = this.#weapon === 'staff' ? STAFF_CLIPS : BLADE_CLIPS;
+        const strike = clips[Math.min(motor.comboStep, clips.length - 1)]!;
+        const strikeTicks = step.windupTicks + step.activeTicks;
+        const rec = `${strike}-rec`;
+        if (body.has(rec)) {
+          if (tickTime < strikeTicks) once(strike, clamp(body.duration(strike) / (strikeTicks * TICK_SECONDS), 0.5, 4), `strike${motor.comboStep}`, 0.06);
+          else once(rec, clamp(body.duration(rec) / Math.max(0.15, step.recoveryTicks * TICK_SECONDS), 0.5, 3), `rec${motor.comboStep}`, 0.08);
+        } else {
+          const total = strikeTicks + step.recoveryTicks;
+          once(strike, clamp(body.duration(strike) / (total * TICK_SECONDS), 0.5, 4), `strike${motor.comboStep}`, 0.06);
+        }
+        break;
+      }
+      case CharacterAction.Parry:
+        once('block', 1.5, 'parry', 0.05);
+        break;
+      case CharacterAction.Stagger:
+        once('knockback', clamp(body.duration('knockback') / Math.max(0.3, motor.actionDuration * TICK_SECONDS), 0.6, 2), 'stagger', 0.06);
+        break;
+      case CharacterAction.Dead:
+        once('death', 1, 'dead', 0.2);
+        break;
+    }
+    // Turn the body towards a dodge quickly, and back afterwards.
+    const diff = Math.atan2(Math.sin(yaw - this.#hunterYaw), Math.cos(yaw - this.#hunterYaw));
+    this.#hunterYaw += diff * (1 - Math.exp(-frameDt * 25));
+    body.object.rotation.y = this.#hunterYaw;
+    body.update(frameDt);
   }
 
   #locomotionPose(target: Pose, speed: number, sprinting: boolean, frameDt: number): void {
