@@ -1,0 +1,3 @@
+Town modules from Kenney's Fantasy Town Kit 2.0 (https://kenney.nl/assets/fantasy-town-kit), CC0 1.0.
+Selected, welded and packed into town.glb by apps/asset-pipeline/src/build-town.ts.
+The First Bastion's layout is original to this game (apps/client/src/world/town.ts).

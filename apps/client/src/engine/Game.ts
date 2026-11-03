@@ -46,6 +46,7 @@ import { BladeTrail } from '../combat/BladeTrail.ts';
 import { CombatSystem } from '../combat/CombatSystem.ts';
 import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { loadParticleAtlas, SpriteFx, type ParticleAtlas } from '../combat/SpriteFx.ts';
+import { Town } from './Town.ts';
 import { GluttonousSerpent } from '../combat/GluttonousSerpent.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
@@ -182,6 +183,7 @@ export class Game implements GameCommands {
   readonly #touch: TouchControls | null;
   readonly #combat: CombatSystem;
   readonly #fx: SpriteFx;
+  readonly #town: Town;
   readonly #numbers: DamageNumbers;
   readonly #reticle: LockReticle;
   readonly #audio = new AudioEngine();
@@ -236,19 +238,20 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit, skin, layers, atlas] = await Promise.all([
+    const [rapier, kit, skin, layers, atlas, townKit] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
       loadPrivateSkin(),
       loadTerrainLayers(`${import.meta.env.BASE_URL}assets/terrain/layers.webp`),
       loadParticleAtlas(`${import.meta.env.BASE_URL}assets/vfx/`),
+      NatureKit.load(`${import.meta.env.BASE_URL}assets/town/town.glb`),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas, townKit);
   }
 
   private constructor(
@@ -261,6 +264,7 @@ export class Game implements GameCommands {
     private readonly skin: CharacterSkin | null,
     layers: TerrainLayerImage,
     atlas: ParticleAtlas,
+    townKit: NatureKit | null,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
@@ -271,8 +275,9 @@ export class Game implements GameCommands {
     this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit });
     this.#scatter = new WorldScatter(grid, this.#physics, kit, touch);
     this.#landmarks = new Landmarks(grid, this.#physics, kit);
+    this.#town = new Town(townKit, this.#physics);
     this.#water = new Water(this.#scene.scene, grid);
-    this.#scene.scene.add(this.#terrain.group, this.#scatter.group, this.#landmarks.group);
+    this.#scene.scene.add(this.#terrain.group, this.#scatter.group, this.#landmarks.group, this.#town.group);
     for (const id of this.#discovered) this.#landmarks.setAttuned(id, true);
 
     this.#motorContext = {
@@ -483,6 +488,15 @@ export class Game implements GameCommands {
     this.#camera.resetBehind(yaw);
     this.#setLock(null);
     this.closeMap();
+  }
+
+  /** Dev-only: stand at (x, z) looking towards (tx, tz). */
+  debugGoto(x: number, z: number, tx: number, tz: number): void {
+    if (this.#player.dead) return;
+    const yaw = yawFromDirection(tx - x, tz - z);
+    this.#player.teleport({ x, y: this.#groundY(x, z) + 0.1, z }, yaw);
+    this.#camera.resetBehind(yaw);
+    this.#setLock(null);
   }
 
   closeReport(): void {
@@ -927,6 +941,7 @@ export class Game implements GameCommands {
     const night = 1 - this.#daylight;
     this.#arena.setNight(night, now);
     this.#landmarks.update(now, night, frameDt);
+    this.#town.update(now);
     this.#water.update(now, frameDt, this.#scene.horizonColor, this.#scene.lightDirection, this.#scene.sun.color, this.#daylight);
     this.kit?.tick(now);
     this.#audio.setNight(night);

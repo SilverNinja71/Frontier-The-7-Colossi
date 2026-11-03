@@ -1,4 +1,5 @@
 import { biomeAt, CELL_SIZE, GULLET, inLake, roadAt, WATER_LEVEL, WORLD_HALF, type Biome, type HeightGrid } from './geography.ts';
+import { townFeatureAt } from './town.ts';
 
 /**
  * Paints the world map (RGBA, north up) from the height grid: hypsometric tints, hill
@@ -61,6 +62,16 @@ export function renderMapPixels(grid: HeightGrid, size: number): Uint8ClampedArr
           r = lerp(r, 196, w);
           g = lerp(g, 160, w);
           b = lerp(b, 112, w);
+        }
+        const feature = Math.abs(x) < 40 && z > 30 && z < 110 ? townFeatureAt(x, z) : null;
+        if (feature === 'roof') {
+          r = 176;
+          g = 74;
+          b = 62;
+        } else if (feature === 'fountain') {
+          r = 120;
+          g = 168;
+          b = 200;
         }
         const shore = inLake(x, z) ? 1 - smoothstep(WATER_LEVEL, WATER_LEVEL + 0.5, h) : 0;
         r = lerp(r, 212, shore);

@@ -31,6 +31,8 @@ const COLONNADE = { x: -24, z: 192, radius: 30, height: 3.2 };
 const GLOAM = { x: -212, z: -18, radius: 105 };
 const MOONLESS_CIRCLE = { x: -214, z: -20, radius: 16 };
 const MEADOW_HILL = { x: 168, z: 176, radius: 46, height: 6 };
+/** The First Bastion: the town just outside the arena's south gate, on a levelled plateau. */
+export const FIRST_BASTION = { x: 0, z: 70, radius: 26, level: 2 };
 /** The Gluttonous Serpent's lair at the end of Windcut Gorge, before the Thornpass Gate. */
 export const GULLET = { x: 210, z: -210, radius: 24, floor: 9.5 };
 
@@ -76,6 +78,15 @@ export const LANDMARKS: readonly Landmark[] = [
     z: 0,
     radius: 34,
     stone: { x: 6, z: 42 },
+  },
+  {
+    id: 'first-bastion',
+    name: 'The First Bastion',
+    blurb: 'Chimney smoke and market chatter. Every hunter sleeps here once.',
+    x: FIRST_BASTION.x,
+    z: FIRST_BASTION.z + 4,
+    radius: 24,
+    stone: { x: -9, z: 89 },
   },
   {
     id: 'mirror-lake',
@@ -151,7 +162,7 @@ export const LANDMARKS: readonly Landmark[] = [
   },
 ];
 
-export const STRUCTURES = { RIDGE, GORGE, COLONNADE, GLOAM, MOONLESS_CIRCLE, MEADOW_HILL, GULLET };
+export const STRUCTURES = { RIDGE, GORGE, COLONNADE, GLOAM, MOONLESS_CIRCLE, MEADOW_HILL, GULLET, FIRST_BASTION };
 
 // --- Height --------------------------------------------------------------------------
 
@@ -245,6 +256,10 @@ export function baseHeight(x: number, z: number): number {
     h = Math.max(h, GULLET.floor + rim * (13 + crag) * (1 - open));
     h = mix(h, GULLET.floor, 1 - smoothstep(GULLET.radius, GULLET.radius + 7, gullet));
   }
+
+  // The First Bastion stands level, its edges easing back into the slope.
+  const town = Math.hypot(x - FIRST_BASTION.x, z - FIRST_BASTION.z);
+  if (town < FIRST_BASTION.radius + 16) h = mix(h, FIRST_BASTION.level, 1 - smoothstep(FIRST_BASTION.radius, FIRST_BASTION.radius + 16, town));
 
   // The arena floor is exactly level (gameplay assumes y = 0 inside the ring).
   const arena = 1 - smoothstep(ARENA_RADIUS + 2.5, ARENA_RADIUS + 14, r);

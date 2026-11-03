@@ -13,7 +13,8 @@
     "terrain": "node --experimental-strip-types --no-warnings src/build-terrain.ts",
     "audio": "node --experimental-strip-types --no-warnings src/build-audio.ts",
     "vfx": "node --experimental-strip-types --no-warnings src/build-vfx.ts",
-    "prompts": "node --experimental-strip-types --no-warnings src/build-prompts.ts"
+    "prompts": "node --experimental-strip-types --no-warnings src/build-prompts.ts",
+    "town": "node --experimental-strip-types --no-warnings src/build-town.ts"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.5.1",
