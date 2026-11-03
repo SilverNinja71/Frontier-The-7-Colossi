@@ -10,7 +10,10 @@
     "nature": "node --experimental-strip-types --no-warnings src/build-nature.ts",
     "statue": "node --experimental-strip-types --no-warnings src/build-statue.ts",
     "character": "node --experimental-strip-types --no-warnings src/build-character.ts",
-    "terrain": "node --experimental-strip-types --no-warnings src/build-terrain.ts"
+    "terrain": "node --experimental-strip-types --no-warnings src/build-terrain.ts",
+    "audio": "node --experimental-strip-types --no-warnings src/build-audio.ts",
+    "vfx": "node --experimental-strip-types --no-warnings src/build-vfx.ts",
+    "prompts": "node --experimental-strip-types --no-warnings src/build-prompts.ts"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.5.1",

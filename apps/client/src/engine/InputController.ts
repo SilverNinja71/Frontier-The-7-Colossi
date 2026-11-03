@@ -47,6 +47,8 @@ export class InputController {
   #padPrevMask = 0;
   /** A gamepad was seen on the last poll. */
   padConnected = false;
+  /** Face-button style of the connected pad, for the HUD's glyphs. */
+  padStyle: 'xbox' | 'playstation' = 'xbox';
   #pressedLatch = 0;
   #lookX = 0;
   #lookY = 0;
@@ -133,6 +135,7 @@ export class InputController {
       return;
     }
     this.padConnected = true;
+    this.padStyle = /054c|playstation|dualsense|dualshock/i.test(pad.id) ? 'playstation' : 'xbox';
 
     const [lx, ly] = deadzone(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
     const [rx, ry] = deadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0);

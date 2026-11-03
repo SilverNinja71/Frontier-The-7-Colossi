@@ -1,9 +1,11 @@
 import { CharacterAction } from '@frontier/shared-types';
 import { useEffect, useState, type ReactNode } from 'react';
+import type { UiSfx } from '../audio/AudioEngine.ts';
 import type { AdFailureReason, PlatformService } from '../platform/index.ts';
 import { LANDMARKS, WORLD_HALF } from '../world/geography.ts';
 import { GAME_ICONS, ICONS, isGameIcon, type IconName } from './icons.ts';
-import { pushToast, useHud, type HudState, type HuntReport } from './store.ts';
+import { INPUT_PROMPTS, promptSvg, type PromptName } from './input-prompts.ts';
+import { pushToast, useHud, type HudState, type HuntReport, type InputDevice } from './store.ts';
 
 export function Hud({ platform }: { platform: PlatformService }) {
   const phase = useHud((s) => s.phase);
@@ -57,6 +59,11 @@ function Icon({ name, size = 20, className = '' }: { name: IconName; size?: numb
 
 type ButtonVariant = 'primary' | 'secondary' | 'arcane' | 'ghost';
 
+/** Menu feedback through the game's audio (silent until audio is unlocked). */
+function uiSound(name: UiSfx): void {
+  useHud.getState().commands?.uiSound(name);
+}
+
 function Button({
   children,
   onClick,
@@ -85,7 +92,17 @@ function Button({
     .filter(Boolean)
     .join(' ');
   return (
-    <button type="button" className={classes} onClick={onClick} disabled={disabled} title={title}>
+    <button
+      type="button"
+      className={classes}
+      onClick={() => {
+        uiSound('click');
+        onClick();
+      }}
+      onPointerEnter={() => !disabled && uiSound('hover')}
+      disabled={disabled}
+      title={title}
+    >
       {icon && <Icon name={icon} size={size === 'sm' ? 15 : 18} />}
       {children}
     </button>
@@ -94,7 +111,16 @@ function Button({
 
 function Toggle({ label, on, onClick, hint }: { label: string; on: boolean; onClick: () => void; hint?: string }) {
   return (
-    <button type="button" className="fx-toggle" aria-pressed={on} onClick={onClick} title={hint}>
+    <button
+      type="button"
+      className="fx-toggle"
+      aria-pressed={on}
+      onClick={() => {
+        uiSound('toggle');
+        onClick();
+      }}
+      title={hint}
+    >
       <span>{label}</span>
       <span className="fx-switch" />
     </button>
@@ -333,7 +359,7 @@ function PauseMenu({ platform }: { platform: PlatformService }) {
             <p className="mt-1 text-white/40">Revive tokens: casual dungeons only · No ads ever during Colossus raids</p>
           </div>
           <p className="text-center text-[10px] leading-relaxed text-white/35">
-            Art: Quaternius (CC0) · Poly Haven (CC0) · Icons: game-icons.net by Lorc &amp; Delapouite (CC BY 3.0)
+            Art: Quaternius (CC0) · Kenney (CC0: sound, effects, input glyphs) · Poly Haven (CC0) · Icons: game-icons.net by Lorc &amp; Delapouite (CC BY 3.0)
           </p>
         </div>
         {platform.available && <div id="pause-banner" className="h-[250px] w-[300px] shrink-0" />}
@@ -435,31 +461,50 @@ function ActionBar() {
   const staff = weapon.name.toLowerCase().includes('staff');
   const move = attacking ? weapon.moves[v.comboStep] : undefined;
   return (
-    <div className="fixed bottom-[max(1.6rem,calc(env(safe-area-inset-bottom)+0.6rem))] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
+    <div className="fixed bottom-[max(2rem,calc(env(safe-area-inset-bottom)+0.9rem))] left-1/2 flex -translate-x-1/2 flex-col items-center gap-1">
       <div className="h-4 text-[11px] font-semibold tracking-[0.18em] text-amber-100/90 uppercase [text-shadow:0_1px_3px_#000]">{move ?? ''}</div>
       <div className="flex items-end gap-2.5">
-        <Slot keyLabel="LMB" name="Strike" icon={staff ? 'gi-staff' : 'gi-swords'} active={attacking} disabled={v.exhausted} primary>
+        <Slot binding={BIND.strike} name="Strike" icon={staff ? 'gi-staff' : 'gi-swords'} active={attacking} disabled={v.exhausted} primary>
           <div className="fx-slot__pips">
             {weapon.moves.map((m, i) => (
               <span key={m} className={`h-1 w-1 rotate-45 ${attacking && i <= v.comboStep ? 'bg-amber-200 shadow-[0_0_5px_rgba(252,211,77,0.9)]' : 'bg-white/25'}`} />
             ))}
           </div>
         </Slot>
-        <Slot keyLabel="Q" name="Swap weapon" icon="gi-swap" active={false} />
-        <Slot keyLabel="Space" name="Dodge" icon="gi-dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
-        <Slot keyLabel="RMB" name="Parry" icon="gi-parry" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
-        <Slot keyLabel="Tab" name="Lock on" icon="gi-lock" active={lockOn} />
-        <Slot keyLabel="Shift" name="Sprint" icon="gi-sprint" active={v.sprinting} disabled={v.exhausted} />
-        <Slot keyLabel="M" name="Map" icon="gi-map" active={mapOpen} trainingOnly />
-        <Slot keyLabel="T" name="Slam drill" icon="gi-target" active={target.drill} trainingOnly />
-        <Slot keyLabel="G" name="Dummy tracking" icon="gi-eye" active={target.tracking} trainingOnly />
+        <Slot binding={BIND.swap} name="Swap weapon" icon="gi-swap" active={false} />
+        <Slot binding={BIND.dodge} name="Dodge" icon="gi-dodge" active={v.action === CharacterAction.Dodge} highlight={v.invulnerable} disabled={v.exhausted} />
+        <Slot binding={BIND.parry} name="Parry" icon="gi-parry" active={v.action === CharacterAction.Parry} highlight={v.deflecting} disabled={v.exhausted} />
+        <Slot binding={BIND.lock} name="Lock on" icon="gi-lock" active={lockOn} />
+        <Slot binding={BIND.sprint} name="Sprint" icon="gi-sprint" active={v.sprinting} disabled={v.exhausted} />
+        <Slot binding={BIND.map} name="Map" icon="gi-map" active={mapOpen} trainingOnly />
+        <Slot binding={BIND.drill} name="Slam drill" icon="gi-target" active={target.drill} trainingOnly />
+        <Slot binding={BIND.tracking} name="Dummy tracking" icon="gi-eye" active={target.tracking} trainingOnly />
       </div>
     </div>
   );
 }
 
+/** Per-device control for each action: a Kenney glyph name, or a plain key label. */
+type Binding = Partial<Record<InputDevice, PromptName | string>>;
+
+const BIND = {
+  strike: { keyboard: 'kb-mouse-left', xbox: 'xbox-x', playstation: 'ps-square' },
+  swap: { keyboard: 'kb-q', xbox: 'xbox-y', playstation: 'ps-triangle' },
+  dodge: { keyboard: 'kb-space', xbox: 'xbox-a', playstation: 'ps-cross' },
+  parry: { keyboard: 'kb-mouse-right', xbox: 'xbox-rb', playstation: 'ps-r1' },
+  lock: { keyboard: 'kb-tab', xbox: 'xbox-r3', playstation: 'ps-r3' },
+  sprint: { keyboard: 'kb-shift', xbox: 'xbox-b', playstation: 'ps-circle' },
+  map: { keyboard: 'kb-m', xbox: 'xbox-view', playstation: 'Create' },
+  drill: { keyboard: 'T' },
+  tracking: { keyboard: 'G' },
+} satisfies Record<string, Binding>;
+
+function isPrompt(key: string): key is PromptName {
+  return key in INPUT_PROMPTS;
+}
+
 function Slot({
-  keyLabel,
+  binding,
   name,
   icon,
   active,
@@ -469,7 +514,7 @@ function Slot({
   primary = false,
   children,
 }: {
-  keyLabel: string;
+  binding: Binding;
   name: string;
   icon: IconName;
   active: boolean;
@@ -480,6 +525,9 @@ function Slot({
   primary?: boolean;
   children?: ReactNode;
 }) {
+  const device = useHud((s) => s.inputDevice);
+  const key = binding[device];
+  if (!key) return null; // e.g. keyboard-only drills while on a controller
   return (
     <div
       className={`fx-slot ${primary ? 'fx-slot--primary' : ''} ${trainingOnly ? 'max-lg:!hidden' : ''} ${primary ? '' : 'max-sm:!h-11 max-sm:!w-11'}`}
@@ -488,7 +536,11 @@ function Slot({
       title={name}
     >
       <Icon name={icon} size={primary ? 32 : 25} />
-      <span className="fx-slot__key">{keyLabel}</span>
+      {isPrompt(key) ? (
+        <span className="fx-slot__glyph" dangerouslySetInnerHTML={{ __html: promptSvg(key, 28) }} />
+      ) : (
+        <span className="fx-slot__key">{key}</span>
+      )}
       {children}
     </div>
   );

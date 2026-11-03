@@ -41,11 +41,11 @@ import {
   type WorldMarkDefinition,
 } from '@frontier/shared-types';
 import * as THREE from 'three';
-import { AudioEngine } from '../audio/AudioEngine.ts';
+import { AudioEngine, type StepSurface, type UiSfx } from '../audio/AudioEngine.ts';
 import { BladeTrail } from '../combat/BladeTrail.ts';
 import { CombatSystem } from '../combat/CombatSystem.ts';
 import { DamageNumbers } from '../combat/DamageNumbers.ts';
-import { HitSparks } from '../combat/HitSparks.ts';
+import { loadParticleAtlas, SpriteFx, type ParticleAtlas } from '../combat/SpriteFx.ts';
 import { GluttonousSerpent } from '../combat/GluttonousSerpent.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
@@ -83,6 +83,7 @@ import {
   inLake,
   LANDMARKS,
   nearestLandmark,
+  roadAt,
   WATER_LEVEL,
   type Biome,
   type Landmark,
@@ -180,7 +181,7 @@ export class Game implements GameCommands {
   readonly #input: InputController;
   readonly #touch: TouchControls | null;
   readonly #combat: CombatSystem;
-  readonly #sparks = new HitSparks();
+  readonly #fx: SpriteFx;
   readonly #numbers: DamageNumbers;
   readonly #reticle: LockReticle;
   readonly #audio = new AudioEngine();
@@ -220,6 +221,8 @@ export class Game implements GameCommands {
   #mapOpen = false;
   #wading = false;
   #rippleTimer = 0;
+  #stepDistance = 0;
+  readonly #groundNormal = { x: 0, y: 1, z: 0 };
   #mapUrl: string | null = null;
   readonly #biome: Biome = { forest: 0, gloam: 0, highland: 0, amber: 0, mesa: 0 };
   readonly #renderPos = new THREE.Vector3();
@@ -233,18 +236,19 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit, skin, layers] = await Promise.all([
+    const [rapier, kit, skin, layers, atlas] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
       loadPrivateSkin(),
       loadTerrainLayers(`${import.meta.env.BASE_URL}assets/terrain/layers.webp`),
+      loadParticleAtlas(`${import.meta.env.BASE_URL}assets/vfx/`),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas);
   }
 
   private constructor(
@@ -256,10 +260,13 @@ export class Game implements GameCommands {
     private readonly grid: HeightGrid,
     private readonly skin: CharacterSkin | null,
     layers: TerrainLayerImage,
+    atlas: ParticleAtlas,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
+    this.#fx = new SpriteFx(atlas, touch);
     this.#physics = new PhysicsWorld(rapier, SIM_DT);
+    this.#audio.preload(`${import.meta.env.BASE_URL}assets/audio/`);
     this.#terrain = new Terrain(grid, this.#physics, toTerrainTexture(layers, this.#scene.renderer), layers.means, touch);
     this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit });
     this.#scatter = new WorldScatter(grid, this.#physics, kit, touch);
@@ -291,7 +298,7 @@ export class Game implements GameCommands {
     this.#bladeTrails = this.#rig.bladeAnchors.map((a) => new BladeTrail(a.base, a.tip));
     this.#staffTrails = this.#rig.staffAnchors.map((a) => new BladeTrail(a.base, a.tip, '#ffd77a'));
     const trailMeshes = [...this.#bladeTrails, ...this.#staffTrails].map((t) => t.mesh);
-    this.#scene.scene.add(this.#rig.root, this.#sparks.points, ...trailMeshes);
+    this.#scene.scene.add(this.#rig.root, this.#fx.group, ...trailMeshes);
 
     this.#dummy = new TrainingDummy(this.#scene.scene, this.#physics, TRAINING_DUMMY, new THREE.Vector3(0, 0, 0));
     this.#stalker = new ShadowStalker(this.#scene.scene, this.#physics, overlayRoot);
@@ -389,6 +396,7 @@ export class Game implements GameCommands {
     }
     const index = SANDBOX_WEAPONS.indexOf(this.#weapon);
     this.#equip(SANDBOX_WEAPONS[(index + 1) % SANDBOX_WEAPONS.length]!);
+    this.#audio.play('swap', this.#renderPos);
     pushToast(`${this.#weapon.name} · ${this.#motorContext.moveset.steps.length}-strike combo`, 'gold');
   }
 
@@ -445,12 +453,14 @@ export class Game implements GameCommands {
     this.#applyRunState();
     this.#syncHud();
     useHud.setState({ mapOpen: true });
+    this.#audio.ui('open');
   }
 
   closeMap(): void {
     if (!this.#mapOpen) return;
     this.#mapOpen = false;
     useHud.setState({ mapOpen: false });
+    this.#audio.ui('close');
     if (this.#phase === 'playing') {
       if (!this.#touch) this.#input.requestPointerLock();
       this.platform.gameplayStart();
@@ -628,7 +638,10 @@ export class Game implements GameCommands {
     if (motorResult.events & MotorEvent.AttackStarted) {
       this.#audio.play(this.#rig.weapon === 'staff' ? 'staff' : 'swing', at, 0.8 + this.#player.motor.comboStep * 0.15);
     }
-    if (motorResult.events & MotorEvent.DodgeStarted) this.#audio.play('dodge', at);
+    if (motorResult.events & MotorEvent.DodgeStarted) {
+      this.#audio.play('dodge', at);
+      this.#fx.dust(pose.x, pose.y, pose.z, 1);
+    }
     if (motorResult.events & MotorEvent.ParryStarted) {
       this.#audio.play('whiff', at);
       this.#combat.onParryStarted();
@@ -643,6 +656,7 @@ export class Game implements GameCommands {
       this.#shockSerial = hit.serial;
       this.#stalker.shockwave(hit.pose.x, hit.pose.z, hit.attack.reach, hit.pose.y);
       this.#audio.play('slam', { x: hit.pose.x, y: hit.pose.y + 0.5, z: hit.pose.z });
+      this.#fx.slam(hit.pose.x, hit.pose.y, hit.pose.z, hit.attack.reach * 0.6);
       this.#camera.addTrauma(0.45);
     }
   }
@@ -661,7 +675,7 @@ export class Game implements GameCommands {
       x = p.x - Math.sin(this.#camera.yaw) * STALKER_EMERGE_DISTANCE;
       z = p.z - Math.cos(this.#camera.yaw) * STALKER_EMERGE_DISTANCE;
     }
-    const y = Math.hypot(x, z) < ARENA_RADIUS ? 0 : this.grid.sample(x, z) + 0.05;
+    const y = this.#groundY(x, z) + (Math.hypot(x, z) < ARENA_RADIUS ? 0 : 0.05);
     this.#stalkerNight = nightIndexAt(this.#worldTime);
     this.#fellTonight = false;
     this.#fledTonight = false;
@@ -691,6 +705,7 @@ export class Game implements GameCommands {
       announce('World event', 'The Shadow Stalker stirs', 'A Unique Colossus hunts beneath the new moon. Blades cannot wound it. Parry.');
       this.#audio.play('gong');
       this.#audio.play('howl', at);
+      this.#fx.shadow(stalker.pose.x, stalker.pose.y, stalker.pose.z, 1.4);
     }
     if (flags & StalkerEvent.TelegraphParryable) this.#audio.play('growl', at, 0.8);
     if (flags & StalkerEvent.TelegraphPerilous) {
@@ -720,10 +735,12 @@ export class Game implements GameCommands {
         fresh ? `Mark acquired: ${MARK_OF_THE_NIGHT_LYCAON.name}` : 'Its mark already burns on your skin.',
       );
       this.#audio.play('gong');
+      this.#fx.shadow(stalker.pose.x, stalker.pose.y, stalker.pose.z, 1.8);
       this.platform.happytime();
       this.#setLock(null);
     }
     if (flags & StalkerEvent.Survived) {
+      this.#fx.shadow(stalker.pose.x, stalker.pose.y, stalker.pose.z, 1.4);
       if (this.#fledTonight) {
         announce('Dawn breaks', 'You fled the hunt', 'The mark only answers to those who endure the whole night.');
       } else if (this.#fellTonight) {
@@ -873,6 +890,7 @@ export class Game implements GameCommands {
     const distance = Math.hypot(pose.x - this.#dummy.pose.x, pose.z - this.#dummy.pose.z);
     this.#camera.addTrauma(distance < DRILL_RADIUS * 2 ? 0.35 : 0.1);
     this.#audio.play('slam', { x: this.#dummy.pose.x, y: 0.5, z: this.#dummy.pose.z }, 0.7);
+    this.#fx.slam(this.#dummy.pose.x, 0, this.#dummy.pose.z, DRILL_RADIUS);
     if (distance > DRILL_RADIUS + 0.4) return;
 
     if (this.#player.invulnerable) {
@@ -949,12 +967,13 @@ export class Game implements GameCommands {
         this.#water.ripple(this.#renderPos.x, this.#renderPos.z);
       }
     }
+    this.#footsteps(frameDt, motor.sprinting);
 
     const lockPoint = this.#lockTarget ? this.#lockTarget.lockPoint(this.#lockPoint) : null;
     this.#dummy.update(alpha, frameDt);
     this.#stalker.update(alpha, frameDt, this.#scene.camera, this.#renderPos);
     this.#serpent.update(alpha, frameDt, this.#scene.camera);
-    this.#sparks.update(frameDt);
+    this.#fx.update(frameDt, this.#scene.camera);
     this.#camera.update(this.#renderPos, frameDt, motor.sprinting && motor.action === CharacterAction.Free, lockPoint);
     this.#scene.followShadow(this.#renderPos);
     this.#scene.render();
@@ -975,7 +994,7 @@ export class Game implements GameCommands {
     const running = this.#phase === 'playing' && !this.#adBreak && !this.#reportOpen && !this.#mapOpen;
     this.#loop.paused = this.#phase === 'paused' || this.#adBreak || this.#reportOpen || this.#mapOpen;
     this.#input.enabled = running;
-    this.#audio.setPaused(!running);
+    this.#audio.setPaused(!running, this.#adBreak);
     if (this.#touch) this.#touch.visible = running;
   }
 
@@ -1028,16 +1047,11 @@ export class Game implements GameCommands {
       { signal },
     );
 
-    const gold = new THREE.Color('#ffc451');
-    const white = new THREE.Color('#fff4e0');
-    const cyan = new THREE.Color('#7fe3ff');
-    const grey = new THREE.Color('#8a90a0');
-    const violet = new THREE.Color('#b48cff');
     this.events.on('hit', (hit) => {
       const point = { x: hit.x, y: hit.y, z: hit.z };
       if (hit.immune) {
         this.#numbers.spawn(this.#tmp.set(hit.x, hit.y + 0.4, hit.z), 'IMMUNE', 'immune');
-        this.#sparks.burst(hit.x, hit.y, hit.z, 6, grey, 4);
+        this.#fx.immune(hit.x, hit.y, hit.z);
         this.#audio.play('immune', point);
         this.#rig.hitstop(0.03);
         return;
@@ -1051,7 +1065,7 @@ export class Game implements GameCommands {
       const kind = hit.isWeakPoint && hit.isCritical ? 'weakpoint' : hit.isCritical ? 'critical' : 'normal';
       const label = kind === 'weakpoint' ? `${hit.amount}!!` : kind === 'critical' ? `${hit.amount}!` : `${hit.amount}`;
       this.#numbers.spawn(this.#tmp.set(hit.x, hit.y + 0.4, hit.z), label, kind);
-      this.#sparks.burst(hit.x, hit.y, hit.z, kind === 'normal' ? 10 : 22, kind === 'normal' ? white : gold, kind === 'normal' ? 5 : 8);
+      this.#fx.hit(hit.x, hit.y, hit.z, kind);
       this.#camera.addTrauma(kind === 'normal' ? 0.12 : 0.28);
       this.#rig.hitstop(kind === 'normal' ? 0.045 : 0.08);
       this.#audio.play(kind === 'normal' ? 'hit' : 'crit', point);
@@ -1059,8 +1073,7 @@ export class Game implements GameCommands {
       useHud.setState({ combo: { ...this.#combo } });
     });
     this.events.on('parry', ({ x, y, z }) => {
-      this.#sparks.burst(x, y, z, 34, gold, 9);
-      this.#sparks.burst(x, y, z, 14, white, 5);
+      this.#fx.parry(x, y, z);
       this.#numbers.spawn(this.#tmp.set(x, y + 0.6, z), 'PARRY', 'parry');
       this.#rig.parryFlash();
       this.#rig.hitstop(0.09);
@@ -1068,7 +1081,7 @@ export class Game implements GameCommands {
       this.#audio.play('parry', { x, y, z });
     });
     this.events.on('guard', ({ x, y, z, amount, broken }) => {
-      this.#sparks.burst(x, y, z, 12, violet, 5);
+      this.#fx.guard(x, y, z);
       this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 2), `-${amount}`, 'player');
       this.#audio.play('guard', { x, y, z });
       this.#camera.addTrauma(0.25);
@@ -1087,7 +1100,7 @@ export class Game implements GameCommands {
       if (staggered) pushToast('Staggered!', 'danger');
     });
     this.events.on('perfectDodge', ({ x, y, z }) => {
-      this.#sparks.burst(x, y, z, 26, cyan, 6);
+      this.#fx.perfectDodge(x, y, z);
       this.#numbers.spawn(this.#tmp.set(x, y + 0.8, z), 'DODGE', 'miss');
       pushToast('PERFECT DODGE', 'cyan');
     });
@@ -1095,7 +1108,72 @@ export class Game implements GameCommands {
     this.events.on('toast', ({ text, tone }) => pushToast(text, tone));
   }
 
+  /** Ground height (the arena floor is flat at 0). */
+  #groundY(x: number, z: number): number {
+    return Math.hypot(x, z) < ARENA_RADIUS ? 0 : this.grid.sample(x, z);
+  }
+
+  /** One footstep per stride while walking on the ground, voiced by what is underfoot. */
+  #footsteps(frameDt: number, sprinting: boolean): void {
+    const speed = this.#player.groundSpeed;
+    if (this.#phase !== 'playing' || !this.#player.grounded || this.#wading || speed < 0.8) {
+      this.#stepDistance = Math.min(this.#stepDistance, 0.5);
+      return;
+    }
+    this.#stepDistance += speed * frameDt;
+    const stride = sprinting ? 1.7 : 1.2;
+    if (this.#stepDistance < stride) return;
+    this.#stepDistance -= stride;
+    const { x, y, z } = this.#renderPos;
+    const surface = this.#surfaceAt(x, y, z);
+    this.#audio.step(surface, { x, y, z }, sprinting ? 1.1 : 0.85);
+    if (sprinting && (surface === 'dirt' || surface === 'snow')) this.#fx.dust(x, y, z, 0.4);
+  }
+
+  #surfaceAt(x: number, y: number, z: number): StepSurface {
+    const ground = this.grid.sample(x, z);
+    if (Math.hypot(x, z) < ARENA_RADIUS) return y > 0.25 ? 'stone' : 'dirt';
+    if (y - ground > 0.25) return 'stone'; // plinths, steps, ruins
+    if (Math.hypot(x - GULLET.x, z - GULLET.z) < GULLET.radius) return 'dirt';
+    if (ground > 46) return 'snow';
+    if (this.grid.normal(x, z, this.#groundNormal).y < 0.8) return 'stone';
+    if (roadAt(x, z).weight > 0.45) return 'dirt';
+    return 'grass';
+  }
+
+  /** Menu feedback from the HUD. */
+  uiSound(name: UiSfx): void {
+    this.#audio.ui(name);
+  }
+
   // --- The Gluttonous Serpent ---------------------------------------------------------
+
+  /** Dev-only: spawn an effect 3.5 m in front of the camera, slowed down to inspect it. */
+  debugFx(kind: 'hit' | 'crit' | 'weak' | 'parry' | 'guard' | 'dodge' | 'slam' | 'acid' | 'shadow' | 'discovery' | 'felled', timeScale = 0.08): void {
+    this.#fx.clear();
+    this.#fx.timeScale = timeScale;
+    const yaw = this.#camera.yaw;
+    const x = this.#renderPos.x - Math.sin(yaw) * 3.5;
+    const z = this.#renderPos.z - Math.cos(yaw) * 3.5;
+    const y = this.#groundY(x, z);
+    const fx = this.#fx;
+    if (kind === 'hit') fx.hit(x, y + 1.2, z, 'normal');
+    if (kind === 'crit') fx.hit(x, y + 1.2, z, 'critical');
+    if (kind === 'weak') fx.hit(x, y + 1.2, z, 'weakpoint');
+    if (kind === 'parry') fx.parry(x, y + 1.3, z);
+    if (kind === 'guard') fx.guard(x, y + 1.2, z);
+    if (kind === 'dodge') fx.dust(x, y, z, 1);
+    if (kind === 'slam') fx.slam(x, y, z, 3);
+    if (kind === 'acid') fx.acid(x, y + 1, z, 1.2);
+    if (kind === 'shadow') fx.shadow(x, y, z, 1.4);
+    if (kind === 'discovery') fx.discovery(x, y, z);
+    if (kind === 'felled') fx.felled(x, y, z, 2);
+  }
+
+  /** Dev-only: whether the recorded samples decoded (and the decoder's measured shift). */
+  debugAudio(): { offset: number; sets: number } | null {
+    return this.#audio.samples;
+  }
 
   /** Dev-only (window.__game in `npm run dev`): wound the serpent by a share of its health. */
   debugHurtSerpent(fraction: number): void {
@@ -1121,6 +1199,7 @@ export class Game implements GameCommands {
       if (outcome) events |= serpentAttackResolved(serpent.brain, outcome);
       if (r.hit?.attack.kind === 'tail' && serpent.brain.phaseTick === serpent.brain.windupTicks) {
         this.#audio.play('slam', { x: r.hit.pose.x, y: r.hit.pose.y + 0.5, z: r.hit.pose.z }, 0.8);
+        this.#fx.slam(r.hit.pose.x, r.hit.pose.y, r.hit.pose.z, 2.5);
         this.#camera.addTrauma(0.3);
       }
       if (r.acid && !player.dead) {
@@ -1128,6 +1207,7 @@ export class Game implements GameCommands {
         player.applyDamage(amount);
         this.#numbers.spawn(this.#tmp.copy(this.#renderPos).setY(this.#renderPos.y + 1.8), `-${amount}`, 'player');
         this.#audio.play('hiss', { x: p.x, y: p.y + 0.3, z: p.z }, 0.5);
+        this.#fx.acid(p.x, p.y + 0.3, p.z, 0.6);
       }
       if (events & SerpentEvent.Swallowed) {
         const amount = Math.round(player.maxHp * 0.4);
@@ -1149,14 +1229,19 @@ export class Game implements GameCommands {
       );
       this.#audio.play('growl', at, 1.4);
       this.#audio.play('hiss', at, 1.2);
+      this.#fx.slam(serpent.pose.x, serpent.pose.y, serpent.pose.z, 4);
       this.#camera.addTrauma(0.5);
     }
     if (flags & SerpentEvent.TelegraphParryable) this.#audio.play('hiss', at, 0.7);
     if (flags & SerpentEvent.TelegraphPerilous) this.#audio.play('growl', at, 1.0);
     if (flags & SerpentEvent.Inhale) this.#audio.play('inhale', at, 1.2);
-    if (flags & SerpentEvent.Spat) this.#audio.play('spit', at);
+    if (flags & SerpentEvent.Spat) {
+      this.#audio.play('spit', at);
+      this.#fx.acid(at.x, at.y, at.z, 1.2);
+    }
     if (flags & SerpentEvent.Swallowed) {
       this.#audio.play('gulp', at, 1.2);
+      this.#fx.acid(at.x, at.y, at.z, 1.6);
       this.#camera.addTrauma(0.7);
     }
     if (flags & SerpentEvent.HeadStunned) {
@@ -1169,7 +1254,10 @@ export class Game implements GameCommands {
       this.#audio.play('howl', at, 1.1);
       this.#camera.addTrauma(0.4);
     }
-    if (flags & SerpentEvent.Retreated) pushToast('The serpent sinks back into the gravel', 'info');
+    if (flags & SerpentEvent.Retreated) {
+      pushToast('The serpent sinks back into the gravel', 'info');
+      this.#fx.slam(serpent.pose.x, serpent.pose.y, serpent.pose.z, 3);
+    }
     if (flags & SerpentEvent.Slain) {
       const first = !this.#gullet.gateOpen;
       this.#gullet = { gateOpen: true, slain: this.#gullet.slain + 1 };
@@ -1181,6 +1269,7 @@ export class Game implements GameCommands {
         first ? 'The way beyond the Bramble Primeval lies open.' : 'It will regrow its scales by dawn.',
       );
       this.#audio.play('gong');
+      this.#fx.felled(serpent.pose.x, serpent.pose.y, serpent.pose.z, 2.5);
       this.platform.happytime();
       if (this.#lockTarget === (this.#serpent as unknown as Lockable)) this.#setLock(null);
     }
@@ -1228,6 +1317,7 @@ export class Game implements GameCommands {
     const found = this.#discovered.size;
     announce(`Discovered · ${found}/${LANDMARKS.length}`, landmark.name, `${landmark.blurb} Its waystone wakes: you will rise here.`);
     this.#audio.play('discover');
+    this.#fx.discovery(landmark.stone.x, this.#groundY(landmark.stone.x, landmark.stone.z), landmark.stone.z);
     if (found === LANDMARKS.length) pushToast('Every corner of the Bramble Primeval found', 'gold');
   }
 
@@ -1266,6 +1356,7 @@ export class Game implements GameCommands {
     const elapsed = Math.max(1, (this.#engagement.last - this.#engagement.start) / 1000);
     const brain = this.#stalker.brain;
     useHud.setState({
+      inputDevice: this.#input.padConnected ? this.#input.padStyle : 'keyboard',
       vitals: {
         hp: this.#player.hp,
         maxHp: this.#player.maxHp,

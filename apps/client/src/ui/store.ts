@@ -1,5 +1,6 @@
 import type { CharacterActionId, MoonPhase, TimeOfDay } from '@frontier/shared-types';
 import { create } from 'zustand';
+import type { UiSfx } from '../audio/AudioEngine.ts';
 import { EMPTY_RECORDS, type HuntRecords } from '../data/progress.ts';
 import type { ToastTone } from '../engine/events.ts';
 import type { PlatformId } from '../platform/index.ts';
@@ -30,6 +31,8 @@ export interface GameCommands {
   openMap(): void;
   closeMap(): void;
   toggleSkin(): void;
+  /** Menu click/hover feedback. */
+  uiSound(name: UiSfx): void;
 }
 
 export interface ExploreHud {
@@ -94,6 +97,9 @@ export interface MarkHud {
   active: boolean;
 }
 
+/** Which glyphs the HUD shows for controls. */
+export type InputDevice = 'keyboard' | 'xbox' | 'playstation';
+
 export interface HudState {
   phase: HudPhase;
   loadingLabel: string;
@@ -101,6 +107,7 @@ export interface HudState {
   adBreak: boolean;
   muted: boolean;
   touch: boolean;
+  inputDevice: InputDevice;
   platformId: PlatformId;
   vitals: {
     hp: number;
@@ -159,6 +166,7 @@ export const useHud = create<HudState>()(() => ({
   adBreak: false,
   muted: false,
   touch: false,
+  inputDevice: 'keyboard',
   platformId: 'web',
   vitals: {
     hp: 1,

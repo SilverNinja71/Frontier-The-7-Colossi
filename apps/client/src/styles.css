@@ -367,6 +367,26 @@ body {
   }
 
   /* Vitals: thin bars with a lagging damage ghost. */
+  /* Kenney input glyphs under each slot, on a dark key bed so cut-out letters stay legible. */
+  .fx-slot__glyph {
+    position: absolute;
+    bottom: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    isolation: isolate;
+    line-height: 0;
+    color: #eadfc4;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.8));
+  }
+  .fx-slot__glyph::before {
+    content: '';
+    position: absolute;
+    inset: 22%;
+    z-index: -1;
+    background: rgb(8 8 12 / 0.85);
+    border-radius: 3px;
+  }
+
   .fx-bar {
     position: relative;
     overflow: hidden;

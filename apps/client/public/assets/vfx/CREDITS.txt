@@ -1,0 +1,20 @@
+Particle sprites by Kenney (https://kenney.nl), CC0 1.0:
+- Particle Pack
+- Smoke Particles
+- star4: Particle Pack star_06.png
+- starX: Particle Pack star_08.png
+- burst: Particle Pack star_09.png
+- glint: Particle Pack flare_01.png
+- ring: Particle Pack circle_03.png
+- dot: Particle Pack circle_05.png
+- streak: Particle Pack trace_02.png
+- slash: Particle Pack slash_02.png
+- impact: Particle Pack scorch_02.png
+- compass: Particle Pack magic_03.png
+- runes: Particle Pack magic_02.png
+- halo: Particle Pack light_02.png
+- debris: Particle Pack dirt_02.png
+- puffA: Smoke Particles White puff/whitePuff02.png
+- puffB: Smoke Particles White puff/whitePuff09.png
+- puffC: Smoke Particles White puff/whitePuff16.png
+Packed into a 4×4 atlas by apps/asset-pipeline/src/build-vfx.ts.

@@ -1,0 +1,5 @@
+Sound effects by Kenney (https://kenney.nl), CC0 1.0:
+- Impact Sounds
+- Interface Sounds
+- RPG Audio
+Trimmed, normalised and packed into one sprite by apps/asset-pipeline/src/build-audio.ts.

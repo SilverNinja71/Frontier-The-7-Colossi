@@ -179,6 +179,11 @@ export class PlayerCharacter {
     return lerpAngle(this.#prev.yaw, this.#curr.yaw, alpha);
   }
 
+  /** Standing on something after the last tick (not mid-fall). */
+  get grounded(): boolean {
+    return this.#grounded;
+  }
+
   /** Horizontal speed over the last tick, m/s. */
   get groundSpeed(): number {
     return Math.hypot(this.#curr.x - this.#prev.x, this.#curr.z - this.#prev.z) / this.motorContext.dt;

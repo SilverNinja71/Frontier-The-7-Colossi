@@ -137,7 +137,38 @@ texture decides the border) and rock is triplanar.
 **Icons.** Action icons are from [game-icons.net](https://game-icons.net) by Lorc and Delapouite
 ([CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)); UI glyphs are adapted from
 [Lucide](https://lucide.dev) (ISC). Both are inlined in `apps/client/src/ui/icons.ts`, and the
-pause menu credits them.
+pause menu credits them. Control glyphs (keyboard, mouse, Xbox and PlayStation buttons) come from
+Kenney's **Input Prompts** (CC0); `npm run prompts -w @frontier/asset-pipeline -- --source
+"<pack>"` inlines the 22 the HUD uses into `apps/client/src/ui/input-prompts.ts`, and the action
+bar swaps them for whichever device is in use.
+
+**Sound.** Hits, parries, blocks, footsteps (grass, dirt, stone, snow, wood), cloth, blade draws
+and menu clicks are recorded CC0 samples from Kenney's **Impact Sounds**, **Interface Sounds**
+and **RPG Audio**:
+
+```bash
+npm run audio -w @frontier/asset-pipeline -- \
+  --impact "<Impact Sounds>/Audio" --interface "<Interface Sounds>/Audio" --rpg "<RPG Audio>/Audio"
+```
+
+trims, normalises and packs the ~80 chosen clips into one 430 KB sprite (`assets/audio/sfx.mp3`
+plus `sfx.json` slices). The sprite opens with a sync click so the client can measure and undo
+whatever encoder delay the browser's MP3 decoder leaves in. `AudioEngine` layers the samples
+(random variant, never the same twice running, slight pitch jitter) under the existing synthesis,
+which still voices the creatures and whooshes and covers everything if the sprite fails to load.
+Menus fade the world bus but keep a UI bus live for clicks.
+
+**Effects.** Sparks, stars, shockwave rings, slashes, impact bursts, runes, debris and smoke come
+from Kenney's **Particle Pack** and **Smoke Particles** (CC0):
+
+```bash
+npm run vfx -w @frontier/asset-pipeline -- --particles "<Particle Pack>/PNG (Transparent)" --smoke "<Smoke Particles>/PNG"
+```
+
+packs 16 sprites into a 512 px atlas. `SpriteFx` draws them as camera-facing (or ground-flat)
+instanced quads in two batches, glows added and smoke blended; streaks stretch along their
+velocity. Named emitters cover the game's vocabulary: hit, critical, weak point, parry, guard,
+immune, perfect dodge, dust, slam, acid, shadow, discovery and a felled colossus.
 
 **Characters from statues (private, personal use).** `npm run character -w @frontier/asset-pipeline`
 turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character for the player
