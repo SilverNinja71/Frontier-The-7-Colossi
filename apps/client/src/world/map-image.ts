@@ -64,14 +64,11 @@ export function renderMapPixels(grid: HeightGrid, size: number): Uint8ClampedArr
           b = lerp(b, 112, w);
         }
         const feature = Math.abs(x) < 40 && z > 30 && z < 110 ? townFeatureAt(x, z) : null;
-        if (feature === 'roof') {
-          r = 176;
-          g = 74;
-          b = 62;
-        } else if (feature === 'fountain') {
-          r = 120;
-          g = 168;
-          b = 200;
+        if (feature) {
+          const [fr, fg, fb] = TOWN_COLOURS[feature];
+          r = fr;
+          g = fg;
+          b = fb;
         }
         const shore = inLake(x, z) ? 1 - smoothstep(WATER_LEVEL, WATER_LEVEL + 0.5, h) : 0;
         r = lerp(r, 212, shore);
@@ -87,6 +84,15 @@ export function renderMapPixels(grid: HeightGrid, size: number): Uint8ClampedArr
   }
   return pixels;
 }
+
+/** Map colours for the First Bastion: terracotta and slate roofs, the white keep, pale walls. */
+const TOWN_COLOURS = {
+  roof: [198, 106, 58],
+  slate: [92, 110, 158],
+  keep: [240, 232, 214],
+  wall: [214, 200, 168],
+  fountain: [120, 168, 200],
+} as const;
 
 function hillShade(grid: HeightGrid, x: number, z: number): number {
   const e = CELL_SIZE * 1.5;

@@ -46,7 +46,7 @@ import { BladeTrail } from '../combat/BladeTrail.ts';
 import { CombatSystem } from '../combat/CombatSystem.ts';
 import { DamageNumbers } from '../combat/DamageNumbers.ts';
 import { loadParticleAtlas, SpriteFx, type ParticleAtlas } from '../combat/SpriteFx.ts';
-import { Town } from './Town.ts';
+import { loadTownArt, Town, type TownArt } from './Town.ts';
 import { GluttonousSerpent } from '../combat/GluttonousSerpent.ts';
 import { ShadowStalker } from '../combat/ShadowStalker.ts';
 import { DRILL_RADIUS, TrainingDummy } from '../combat/TrainingDummy.ts';
@@ -238,20 +238,20 @@ export class Game implements GameCommands {
     onProgress: (label: string) => void,
   ): Promise<Game> {
     onProgress('Loading physics and scenery…');
-    const [rapier, kit, skin, layers, atlas, townKit] = await Promise.all([
+    const [rapier, kit, skin, layers, atlas, townArt] = await Promise.all([
       loadRapier(),
       NatureKit.load(`${import.meta.env.BASE_URL}assets/nature/nature.glb`),
       loadPrivateSkin(),
       loadTerrainLayers(`${import.meta.env.BASE_URL}assets/terrain/layers.webp`),
       loadParticleAtlas(`${import.meta.env.BASE_URL}assets/vfx/`),
-      NatureKit.load(`${import.meta.env.BASE_URL}assets/town/town.glb`),
+      loadTownArt(`${import.meta.env.BASE_URL}assets/town/`),
     ]);
     onProgress('Shaping the Bramble Primeval…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
     const grid = new HeightGrid();
     onProgress('Raising the training grounds…');
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas, townKit);
+    return new Game(gameRoot, overlayRoot, platform, rapier, kit, grid, skin, layers, atlas, townArt);
   }
 
   private constructor(
@@ -264,7 +264,7 @@ export class Game implements GameCommands {
     private readonly skin: CharacterSkin | null,
     layers: TerrainLayerImage,
     atlas: ParticleAtlas,
-    townKit: NatureKit | null,
+    townArt: TownArt | null,
   ) {
     const touch = isTouchDevice();
     this.#scene = new SceneManager(gameRoot, { lowPower: touch });
@@ -275,7 +275,7 @@ export class Game implements GameCommands {
     this.#arena = new ArenaTerrain(this.#scene.scene, this.#physics, { kit });
     this.#scatter = new WorldScatter(grid, this.#physics, kit, touch);
     this.#landmarks = new Landmarks(grid, this.#physics, kit);
-    this.#town = new Town(townKit, this.#physics);
+    this.#town = new Town(townArt, grid, this.#physics);
     this.#water = new Water(this.#scene.scene, grid);
     this.#scene.scene.add(this.#terrain.group, this.#scatter.group, this.#landmarks.group, this.#town.group);
     for (const id of this.#discovered) this.#landmarks.setAttuned(id, true);

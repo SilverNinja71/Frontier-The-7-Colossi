@@ -86,7 +86,7 @@ export const LANDMARKS: readonly Landmark[] = [
     x: FIRST_BASTION.x,
     z: FIRST_BASTION.z + 4,
     radius: 24,
-    stone: { x: -9, z: 89 },
+    stone: { x: -6, z: 75 },
   },
   {
     id: 'mirror-lake',

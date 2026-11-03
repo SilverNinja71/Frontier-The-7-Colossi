@@ -170,22 +170,29 @@ instanced quads in two batches, glows added and smoke blended; streaks stretch a
 velocity. Named emitters cover the game's vocabulary: hit, critical, weak point, parry, guard,
 immune, perfect dodge, dust, slam, acid, shadow, discovery and a felled colossus.
 
-**The First Bastion.** The first town stands outside the arena's south gate, built from Kenney's
-**Fantasy Town Kit** (CC0) modules to an original layout (`apps/client/src/world/town.ts`):
+**The First Bastion.** The first town stands outside the arena's south gate: a walled town in
+the old-European manner, laid out originally for this game (`apps/client/src/world/town.ts`).
+Tall cream-stucco townhouses (3–4 storeys, arched and shuttered windows, dormers, chimneys,
+banners) stand shoulder to shoulder along a cobbled main street that opens into a market square
+with a fountain; an octagonal curtain wall of pale ashlar, crenellated, with square towers at
+the corners and arched gatehouses wherever a road passes (North, South and Meadow gates); and a
+white keep with four spired turrets rises over the south gate.
 
 ```bash
 npm run town -w @frontier/asset-pipeline -- --source "<Fantasy Town Kit>/Models/GLB format"
 ```
 
-packs the 38 modules the town uses into `assets/town/town.glb` (183 KB, ~8.9k triangles, one
-shared colour map). The terrain levels a plateau for it (`FIRST_BASTION` in `geography.ts`) that
-eases back into the slope, and scenery keeps clear. `Town` assembles each house from wall,
-door, window, roof and gable modules on a 3 m grid (stone or plaster ground floors, timber
-upper floors, a steep gable roof, chimneys, banners); gable halves that need mirroring use a
-pre-flipped geometry so batching keeps working. The whole town is one `BatchedMesh` per material
-(two draw calls) with box colliders for houses and stalls, cylinders for lamps and the fountain,
-and the mill's sails turn. The town is the tenth landmark (waystone by the square), and the
-world map and minimap paint its roofs and fountain.
+packs the 39 Kenney **Fantasy Town Kit** (CC0) modules the houses and market use into
+`assets/town/town.glb` (~190 KB), and repaints the kit's palette texture into two variants
+(`palette-terracotta.webp`, `palette-slate.webp`): cream stucco walls, pale limestone trim,
+warm stone, terracotta or slate roofs. `Town` assembles each house from wall, door, window,
+roof, dormer and gable modules on a 3 m grid (mirrored gable halves use a pre-flipped geometry
+so batching holds) into one `BatchedMesh` per material; market props keep the kit's own
+colours. The stonework is procedural: walls, towers, gate arches (an extruded inverted-U) and
+the keep share a generated ashlar texture whose courses line up in world space, and the streets
+are paved with generated cobbles. The terrain levels a plateau for the town (`FIRST_BASTION`),
+scenery keeps clear, everything collides, the town is the tenth landmark (waystone on the
+square), and the map and minimap paint its roofs, walls and keep.
 
 **Characters from statues (private, personal use).** `npm run character -w @frontier/asset-pipeline`
 turns a single-mesh statue (e.g. a 3D-print model) into a rigid-part character for the player
